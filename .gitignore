@@ -1,0 +1,12 @@
+# Binary
+solo-leveling
+
+# Database
+*.db
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
