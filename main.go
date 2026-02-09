@@ -5,6 +5,7 @@ import (
 
 	fyneApp "fyne.io/fyne/v2/app"
 
+	"solo-leveling/internal/config"
 	"solo-leveling/internal/database"
 	"solo-leveling/internal/game"
 	"solo-leveling/internal/ui"
@@ -46,19 +47,10 @@ func main() {
 		log.Printf("Warning: failed to init enemies: %v", err)
 	}
 
-	// Initialize player resources row
-	if err := engine.InitResources(); err != nil {
-		log.Printf("Warning: failed to init resources: %v", err)
-	}
-
-	// Seed craft recipes if not yet created
-	if err := engine.InitRecipes(); err != nil {
-		log.Printf("Warning: failed to init recipes: %v", err)
-	}
-
 	application := fyneApp.New()
 	application.Settings().SetTheme(&ui.SoloLevelingTheme{})
 
-	appUI := ui.NewApp(application, engine)
+	features := config.DefaultFeatures()
+	appUI := ui.NewApp(application, engine, features)
 	appUI.Run()
 }

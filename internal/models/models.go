@@ -103,8 +103,25 @@ const (
 )
 
 type Character struct {
-	ID   int64
-	Name string
+	ID       int64
+	Name     string
+	Attempts int
+}
+
+const MaxAttempts = 8
+
+// AttemptsForRank returns how many battle attempts a quest of the given rank awards.
+func AttemptsForRank(rank QuestRank) int {
+	switch rank {
+	case RankE, RankD:
+		return 1
+	case RankC, RankB:
+		return 2
+	case RankA, RankS:
+		return 3
+	default:
+		return 1
+	}
 }
 
 type StatLevel struct {
@@ -244,248 +261,46 @@ const (
 )
 
 type Enemy struct {
-	ID             int64
-	Name           string
-	Description    string
-	Rank           QuestRank
-	Type           EnemyType
-	HP             int
-	Attack         int
-	PatternSize    int     // number of cells to memorize
-	ShowTime       float64 // seconds the pattern is displayed
-	RewardEXP      int
-	RewardCrystals int
-	DropMaterial   MaterialTier // which material tier can drop
-	DropChance     float64      // 0.0 - 1.0 probability of material drop
-}
-
-// --- Currency & Materials ---
-
-type MaterialTier string
-
-const (
-	MaterialCommon MaterialTier = "common"
-	MaterialRare   MaterialTier = "rare"
-	MaterialEpic   MaterialTier = "epic"
-)
-
-func (m MaterialTier) DisplayName() string {
-	switch m {
-	case MaterialCommon:
-		return "Обычный"
-	case MaterialRare:
-		return "Редкий"
-	case MaterialEpic:
-		return "Эпический"
-	default:
-		return string(m)
-	}
-}
-
-func (m MaterialTier) Color() string {
-	switch m {
-	case MaterialCommon:
-		return "#8a8a8a"
-	case MaterialRare:
-		return "#4a7fbf"
-	case MaterialEpic:
-		return "#9b59b6"
-	default:
-		return "#ffffff"
-	}
-}
-
-type PlayerResources struct {
-	ID             int64
-	CharID         int64
-	Crystals       int
-	MaterialCommon int
-	MaterialRare   int
-	MaterialEpic   int
-}
-
-// --- Equipment System ---
-
-type EquipmentRarity string
-
-const (
-	RarityCommon    EquipmentRarity = "common"
-	RarityUncommon  EquipmentRarity = "uncommon"
-	RarityRare      EquipmentRarity = "rare"
-	RarityEpic      EquipmentRarity = "epic"
-	RarityLegendary EquipmentRarity = "legendary"
-)
-
-var AllRarities = []EquipmentRarity{RarityCommon, RarityUncommon, RarityRare, RarityEpic, RarityLegendary}
-
-func (r EquipmentRarity) DisplayName() string {
-	switch r {
-	case RarityCommon:
-		return "Обычное"
-	case RarityUncommon:
-		return "Необычное"
-	case RarityRare:
-		return "Редкое"
-	case RarityEpic:
-		return "Эпическое"
-	case RarityLegendary:
-		return "Легендарное"
-	default:
-		return string(r)
-	}
-}
-
-func (r EquipmentRarity) Color() string {
-	switch r {
-	case RarityCommon:
-		return "#8a8a8a"
-	case RarityUncommon:
-		return "#4a9e4a"
-	case RarityRare:
-		return "#4a7fbf"
-	case RarityEpic:
-		return "#9b59b6"
-	case RarityLegendary:
-		return "#e67e22"
-	default:
-		return "#ffffff"
-	}
-}
-
-func (r EquipmentRarity) BaseStats() int {
-	switch r {
-	case RarityCommon:
-		return 2
-	case RarityUncommon:
-		return 5
-	case RarityRare:
-		return 10
-	case RarityEpic:
-		return 18
-	case RarityLegendary:
-		return 30
-	default:
-		return 0
-	}
-}
-
-func (r EquipmentRarity) DismantleCrystals() int {
-	switch r {
-	case RarityCommon:
-		return 5
-	case RarityUncommon:
-		return 15
-	case RarityRare:
-		return 40
-	case RarityEpic:
-		return 100
-	case RarityLegendary:
-		return 250
-	default:
-		return 0
-	}
-}
-
-func (r EquipmentRarity) DismantleMaterial() (MaterialTier, int) {
-	switch r {
-	case RarityCommon:
-		return MaterialCommon, 1
-	case RarityUncommon:
-		return MaterialCommon, 3
-	case RarityRare:
-		return MaterialRare, 2
-	case RarityEpic:
-		return MaterialRare, 3
-	case RarityLegendary:
-		return MaterialEpic, 2
-	default:
-		return MaterialCommon, 0
-	}
-}
-
-type EquipmentSlot string
-
-const (
-	SlotWeapon    EquipmentSlot = "weapon"
-	SlotArmor     EquipmentSlot = "armor"
-	SlotAccessory EquipmentSlot = "accessory"
-)
-
-func (s EquipmentSlot) DisplayName() string {
-	switch s {
-	case SlotWeapon:
-		return "Оружие"
-	case SlotArmor:
-		return "Броня"
-	case SlotAccessory:
-		return "Аксессуар"
-	default:
-		return string(s)
-	}
-}
-
-type Equipment struct {
 	ID          int64
-	CharID      int64
 	Name        string
-	Slot        EquipmentSlot
-	Rarity      EquipmentRarity
-	Level       int
-	CurrentEXP  int
-	BonusAttack int     // weapon: bonus damage in battle
-	BonusHP     int     // armor: bonus HP in battle
-	BonusTime   float64 // accessory: bonus memorize time (seconds)
-	Equipped    bool
-	CreatedAt   time.Time
+	Description string
+	Rank        QuestRank
+	Type        EnemyType
+	HP          int
+	Attack      int
+	Floor       int
 }
 
-func EquipmentEXPForLevel(level int) int {
-	return 30 + (level-1)*20
-}
-
-// --- Gacha System ---
-
-type GachaBanner string
-
-const (
-	BannerNormal   GachaBanner = "normal"
-	BannerAdvanced GachaBanner = "advanced"
-)
-
-func (b GachaBanner) DisplayName() string {
-	switch b {
-	case BannerNormal:
-		return "Обычный призыв"
-	case BannerAdvanced:
-		return "Продвинутый призыв"
+// StreakTitle returns the title earned at a given streak milestone, or empty string.
+func StreakTitle(streak int) string {
+	switch {
+	case streak >= 365:
+		return "Неостановимый (365 дней)"
+	case streak >= 100:
+		return "Легенда Дисциплины (100 дней)"
+	case streak >= 30:
+		return "Стальная Воля (30 дней)"
+	case streak >= 7:
+		return "Начинающий Охотник (7 дней)"
 	default:
-		return string(b)
+		return ""
 	}
 }
 
-func (b GachaBanner) Cost() int {
-	switch b {
-	case BannerNormal:
-		return 100
-	case BannerAdvanced:
-		return 300
-	default:
-		return 100
+// AllStreakMilestones returns all streak milestones in order.
+func AllStreakMilestones() []struct {
+	Days  int
+	Title string
+} {
+	return []struct {
+		Days  int
+		Title string
+	}{
+		{7, "Начинающий Охотник"},
+		{30, "Стальная Воля"},
+		{100, "Легенда Дисциплины"},
+		{365, "Неостановимый"},
 	}
-}
-
-type GachaHistory struct {
-	ID          int64
-	CharID      int64
-	Banner      GachaBanner
-	EquipmentID int64
-	Rarity      EquipmentRarity
-	PulledAt    time.Time
-}
-
-type GachaPity struct {
-	NormalPity   int // pulls since last rare+ on normal banner
-	AdvancedPity int // pulls since last epic+ on advanced banner
 }
 
 // --- Battle System ---
@@ -498,20 +313,21 @@ const (
 )
 
 type BattleRecord struct {
-	ID             int64
-	CharID         int64
-	EnemyID        int64
-	EnemyName      string
-	Result         BattleResult
-	DamageDealt    int
-	DamageTaken    int
-	Accuracy       float64
-	CriticalHits   int
-	Dodges         int
-	RewardEXP      int
-	RewardCrystals int
-	MaterialDrop   string // empty or material tier
-	FoughtAt       time.Time
+	ID           int64
+	CharID       int64
+	EnemyID      int64
+	EnemyName    string
+	Result       BattleResult
+	DamageDealt  int
+	DamageTaken  int
+	Accuracy     float64
+	CriticalHits int
+	Dodges       int
+	FoughtAt     time.Time
+	// Runtime-only reward info (not persisted)
+	RewardTitle       string
+	RewardBadge       string
+	UnlockedEnemyName string
 }
 
 // BattleState holds the live state of a memory-game battle
@@ -522,7 +338,11 @@ type BattleState struct {
 	EnemyHP       int
 	EnemyMaxHP    int
 	Round         int
-	Pattern       []int // cell indices to memorize
+	GridSize      int
+	PatternLength int
+	ShowTimeMs    int
+	AllowedErrors int
+	Pattern       []int // ordered sequence of cell indices
 	PlayerGuesses []int // player's chosen cells
 	TotalHits     int
 	TotalMisses   int
@@ -532,51 +352,6 @@ type BattleState struct {
 	DamageTaken   int
 	BattleOver    bool
 	Result        BattleResult
-}
-
-// --- Crafting System ---
-
-type CraftRecipe struct {
-	ID           int64
-	Name         string
-	ResultSlot   EquipmentSlot
-	ResultRarity EquipmentRarity
-	CostCrystals int
-	CostCommon   int
-	CostRare     int
-	CostEpic     int
-}
-
-// --- Daily Rewards ---
-
-type DailyReward struct {
-	ID        int64
-	CharID    int64
-	ClaimedAt time.Time
-	Day       int // streak day (1-7, then repeats)
-	Crystals  int
-}
-
-func DailyRewardCrystals(streakDay int) int {
-	day := ((streakDay - 1) % 7) + 1
-	switch day {
-	case 1:
-		return 50
-	case 2:
-		return 50
-	case 3:
-		return 75
-	case 4:
-		return 75
-	case 5:
-		return 100
-	case 6:
-		return 100
-	case 7:
-		return 200
-	default:
-		return 50
-	}
 }
 
 // --- Extended Statistics ---
@@ -592,9 +367,13 @@ type BattleStatistics struct {
 	EnemiesDefeated map[string]int // enemy name -> defeat count
 }
 
-type GachaStatistics struct {
-	TotalPulls    int
-	PullsByBanner map[GachaBanner]int
-	PullsByRarity map[EquipmentRarity]int
-	CrystalsSpent int
+// --- Battle Rewards ---
+
+type BattleReward struct {
+	ID        int64
+	CharID    int64
+	EnemyID   int64
+	Title     string
+	Badge     string
+	AwardedAt time.Time
 }
