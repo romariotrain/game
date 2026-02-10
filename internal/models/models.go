@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"math"
+	"time"
+)
 
 type StatType string
 
@@ -55,6 +58,49 @@ const (
 )
 
 var AllRanks = []QuestRank{RankE, RankD, RankC, RankB, RankA, RankS}
+
+// RankFromEXP maps quest EXP to display rank.
+func RankFromEXP(exp int) QuestRank {
+	switch {
+	case exp <= 10:
+		return RankE
+	case exp <= 18:
+		return RankD
+	case exp <= 28:
+		return RankC
+	case exp <= 40:
+		return RankB
+	case exp <= 55:
+		return RankA
+	default:
+		return RankS
+	}
+}
+
+// CalculateQuestEXP calculates deterministic quest EXP from workload signals.
+func CalculateQuestEXP(minutes, effort, friction int) int {
+	if minutes < 0 {
+		minutes = 0
+	}
+	if effort < 1 {
+		effort = 1
+	}
+	if effort > 5 {
+		effort = 5
+	}
+	if friction < 1 {
+		friction = 1
+	}
+	if friction > 3 {
+		friction = 3
+	}
+	base := float64(minutes) * 0.6
+	exp := int(math.Round(base + float64(effort*4+friction*3)))
+	if exp < 1 {
+		return 1
+	}
+	return exp
+}
 
 func (r QuestRank) BaseEXP() int {
 	switch r {
@@ -152,7 +198,7 @@ type AISuggestion struct {
 
 const MaxAttempts = 8
 
-// AttemptsForRank returns how many battle attempts a quest of the given rank awards.
+// AttemptsForRank is legacy mapping retained for compatibility in non-quest systems.
 func AttemptsForRank(rank QuestRank) int {
 	switch rank {
 	case RankE, RankD:
@@ -163,6 +209,18 @@ func AttemptsForRank(rank QuestRank) int {
 		return 3
 	default:
 		return 1
+	}
+}
+
+// AttemptsForQuestEXP returns attempts awarded by quest EXP.
+func AttemptsForQuestEXP(exp int) int {
+	switch {
+	case exp < 15:
+		return 1
+	case exp <= 30:
+		return 2
+	default:
+		return 3
 	}
 }
 
@@ -180,18 +238,20 @@ func ExpForLevel(level int) int {
 }
 
 type Quest struct {
-	ID          int64
-	CharID      int64
-	Title       string
-	Description string
-	Rank        QuestRank
-	TargetStat  StatType
-	Status      QuestStatus
-	CreatedAt   time.Time
-	CompletedAt *time.Time
-	IsDaily     bool
-	TemplateID  *int64 // link to daily_quest_templates
-	DungeonID   *int64 // link to dungeon_quests if this is a dungeon quest
+	ID              int64
+	CharID          int64
+	Title           string
+	Description     string
+	Congratulations string
+	Exp             int
+	Rank            QuestRank
+	TargetStat      StatType
+	Status          QuestStatus
+	CreatedAt       time.Time
+	CompletedAt     *time.Time
+	IsDaily         bool
+	TemplateID      *int64 // link to daily_quest_templates
+	DungeonID       *int64 // link to dungeon_quests if this is a dungeon quest
 }
 
 type Skill struct {
@@ -214,14 +274,16 @@ type QuestHistoryEntry struct {
 // --- Daily Quest Templates ---
 
 type DailyQuestTemplate struct {
-	ID          int64
-	CharID      int64
-	Title       string
-	Description string
-	Rank        QuestRank
-	TargetStat  StatType
-	Active      bool // whether this template is still active (user can disable)
-	CreatedAt   time.Time
+	ID              int64
+	CharID          int64
+	Title           string
+	Description     string
+	Congratulations string
+	Exp             int
+	Rank            QuestRank
+	TargetStat      StatType
+	Active          bool // whether this template is still active (user can disable)
+	CreatedAt       time.Time
 }
 
 // --- Daily Activity ---
@@ -281,6 +343,7 @@ type DungeonQuestDef struct {
 	DungeonID   int64
 	Title       string
 	Description string
+	Exp         int
 	Rank        QuestRank
 	TargetStat  StatType
 }

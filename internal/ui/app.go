@@ -282,7 +282,7 @@ func (a *App) buildHistoryCard(q models.Quest) *fyne.Container {
 
 	dateText := components.MakeLabel(completedStr, components.ColorTextDim)
 	expText := components.MakeLabel(
-		fmt.Sprintf("+%d EXP -> %s %s", q.Rank.BaseEXP(), q.TargetStat.Icon(), q.TargetStat.DisplayName()),
+		fmt.Sprintf("+%d EXP -> %s %s | Ранг: %s", q.Exp, q.TargetStat.Icon(), q.TargetStat.DisplayName(), q.Rank),
 		components.ColorGreen,
 	)
 
