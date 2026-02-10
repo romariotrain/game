@@ -11,8 +11,10 @@ import (
 )
 
 type Engine struct {
-	DB        *database.DB
-	Character *models.Character
+	DB                    *database.DB
+	Character             *models.Character
+	RecommendationSource  string
+	RecommendationDetails string
 }
 
 func NewEngine(db *database.DB) (*Engine, error) {
@@ -20,7 +22,12 @@ func NewEngine(db *database.DB) (*Engine, error) {
 	if err != nil {
 		return nil, fmt.Errorf("init character: %w", err)
 	}
-	return &Engine{DB: db, Character: char}, nil
+	return &Engine{
+		DB:                    db,
+		Character:             char,
+		RecommendationSource:  "rule-based",
+		RecommendationDetails: "инициализация",
+	}, nil
 }
 
 // ============================================================

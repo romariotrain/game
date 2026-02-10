@@ -108,6 +108,48 @@ type Character struct {
 	Attempts int
 }
 
+type HunterProfile struct {
+	CharID                   int64
+	About                    string
+	Goals                    string
+	Priorities               string
+	TimeBudget               string
+	PhysicalConstraints      string
+	PsychologicalConstraints string
+	DayRoutine               string
+	PrimaryPlaces            string
+	Dislikes                 string
+	SupportStyle             string
+	ExtraDetails             string
+	CreatedAt                time.Time
+	UpdatedAt                time.Time
+}
+
+type QuestSuggestion struct {
+	Title            string
+	Description      string
+	Rank             QuestRank
+	TargetStat       StatType
+	EstimatedMinutes int
+}
+
+type PlayerStats struct {
+	STR int
+	AGI int
+	INT int
+	STA int
+}
+
+type AISuggestion struct {
+	Title    string   `json:"title"`
+	Desc     string   `json:"desc"`
+	Minutes  int      `json:"minutes"`
+	Effort   int      `json:"effort"`
+	Friction int      `json:"friction"`
+	Stat     string   `json:"stat"`
+	Tags     []string `json:"tags"`
+}
+
 const MaxAttempts = 8
 
 // AttemptsForRank returns how many battle attempts a quest of the given rank awards.
