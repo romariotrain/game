@@ -76,6 +76,9 @@ func (a *App) Run() {
 		RefreshDungeons: func() {
 			a.refreshDungeonsPanel()
 		},
+		RefreshAchievements: func() {
+			a.refreshAchievementsPanel()
+		},
 		RefreshHistory: func() {
 			a.refreshHistoryPanel()
 		},
@@ -94,17 +97,23 @@ func (a *App) buildMainLayout() fyne.CanvasObject {
 		todayTab := container.NewTabItem("Сегодня", tabs.BuildToday(a.tabsCtx))
 		questsTab := container.NewTabItem("Задания", tabs.BuildQuests(a.tabsCtx))
 		progressTab := container.NewTabItem("Прогресс", tabs.BuildProgress(a.tabsCtx))
+		achievementsTab := container.NewTabItem("Achievements", tabs.BuildAchievements(a.tabsCtx))
 		dungeonsTab := container.NewTabItem("Данжи", tabs.BuildDungeons(a.tabsCtx))
-		appTabs = container.NewAppTabs(todayTab, questsTab, progressTab, dungeonsTab)
+		tabItems := []*container.TabItem{todayTab, questsTab, progressTab, achievementsTab, dungeonsTab}
+		if a.features.Combat {
+			tabItems = append(tabItems, container.NewTabItem("Tower", a.buildArenaTab()))
+		}
+		appTabs = container.NewAppTabs(tabItems...)
 	} else {
 		charTab := container.NewTabItem("Охотник", tabs.BuildToday(a.tabsCtx))
 		questsTab := container.NewTabItem("Задания", tabs.BuildQuests(a.tabsCtx))
 		dungeonsTab := container.NewTabItem("Данжи", tabs.BuildDungeons(a.tabsCtx))
 		statsTab := container.NewTabItem("Статистика", tabs.BuildProgress(a.tabsCtx))
+		achievementsTab := container.NewTabItem("Achievements", tabs.BuildAchievements(a.tabsCtx))
 
-		tabItems := []*container.TabItem{charTab, questsTab, dungeonsTab, statsTab}
+		tabItems := []*container.TabItem{charTab, questsTab, dungeonsTab, statsTab, achievementsTab}
 		if a.features.Combat {
-			tabItems = append(tabItems, container.NewTabItem("Арена", a.buildArenaTab()))
+			tabItems = append(tabItems, container.NewTabItem("Tower", a.buildArenaTab()))
 		}
 		tabItems = append(tabItems,
 			container.NewTabItem("История", a.buildHistoryTab()),
@@ -217,7 +226,9 @@ func (a *App) refreshAll() {
 	a.refreshCharacterPanel()
 	a.refreshHistoryPanel()
 	a.refreshStatsPanel()
+	a.refreshAchievementsPanel()
 	a.refreshDungeonsPanel()
+	a.refreshArenaPanel()
 }
 
 // ================================================================
@@ -304,6 +315,10 @@ func (a *App) refreshStatsPanel() {
 	tabs.RefreshProgress(a.tabsCtx)
 }
 
+func (a *App) refreshAchievementsPanel() {
+	tabs.RefreshAchievements(a.tabsCtx)
+}
+
 // ================================================================
 // Dungeons Tab
 // ================================================================
@@ -326,7 +341,7 @@ func (a *App) buildArenaTab() fyne.CanvasObject {
 	a.refreshArenaPanel()
 	return container.NewVScroll(container.NewPadded(
 		container.NewVBox(
-			components.MakeSectionHeader("Башня — Выбор противника"),
+			components.MakeSectionHeader("Tower"),
 			components.MakeLabel("Бои не дают EXP. 1 бой = 1 попытка. Попытки зарабатываются заданиями.", components.ColorTextDim),
 			a.arenaPanel,
 		),
@@ -348,59 +363,31 @@ func (a *App) refreshArenaPanel() {
 	)
 	a.arenaPanel.Add(components.MakeCard(container.NewVBox(attemptsLabel, attemptsBar)))
 
-	enemies, err := a.engine.GetEnemies()
+	currentEnemy, err := a.engine.GetCurrentEnemy()
 	if err != nil {
 		a.arenaPanel.Add(components.MakeLabel("Ошибка: "+err.Error(), components.ColorRed))
 		a.arenaPanel.Refresh()
 		return
 	}
-
-	// Group enemies by floor
-	floorMap := make(map[int][]models.Enemy)
-	for _, e := range enemies {
-		floorMap[e.Floor] = append(floorMap[e.Floor], e)
+	a.arenaPanel.Add(widget.NewSeparator())
+	if currentEnemy == nil {
+		a.arenaPanel.Add(components.MakeCard(container.NewVBox(
+			components.MakeTitle("Tower: зачищена", components.ColorGold, 18),
+			components.MakeLabel("Статус: cleared", components.ColorAccentBright),
+			components.MakeLabel("Все текущие враги побеждены. EXP за бои не начисляется.", components.ColorTextDim),
+		)))
+		a.arenaPanel.Refresh()
+		return
 	}
 
-	// Collect and sort floors
-	var floors []int
-	for f := range floorMap {
-		floors = append(floors, f)
-	}
-	sortInts(floors)
-
-	for _, floor := range floors {
-		floorEnemies := floorMap[floor]
-		floorLabel := game.FloorName(floor)
-		a.arenaPanel.Add(widget.NewSeparator())
-		a.arenaPanel.Add(components.MakeTitle(fmt.Sprintf("Этаж %d — %s", floor, floorLabel), components.ColorAccentBright, 16))
-
-		for _, e := range floorEnemies {
-			enemy := e
-			card := a.buildEnemyCard(enemy)
-			a.arenaPanel.Add(card)
-		}
-	}
-
-	// Battle history
-	battles, err := a.engine.GetBattleHistory(10)
-	if err == nil && len(battles) > 0 {
-		a.arenaPanel.Add(widget.NewSeparator())
-		a.arenaPanel.Add(components.MakeTitle("Последние бои", components.ColorAccentBright, 16))
-		for _, b := range battles {
-			card := a.buildBattleHistoryCard(b)
-			a.arenaPanel.Add(card)
-		}
-	}
+	section := components.MakeTitle(
+		fmt.Sprintf("Текущий сектор: Этаж %d — %s", currentEnemy.Floor, game.FloorName(currentEnemy.Floor)),
+		components.ColorAccentBright, 16,
+	)
+	a.arenaPanel.Add(section)
+	a.arenaPanel.Add(a.buildEnemyCard(*currentEnemy))
 
 	a.arenaPanel.Refresh()
-}
-
-func sortInts(a []int) {
-	for i := 1; i < len(a); i++ {
-		for j := i; j > 0 && a[j-1] > a[j]; j-- {
-			a[j-1], a[j] = a[j], a[j-1]
-		}
-	}
 }
 
 func (a *App) buildEnemyCard(e models.Enemy) *fyne.Container {
@@ -408,14 +395,15 @@ func (a *App) buildEnemyCard(e models.Enemy) *fyne.Container {
 
 	var typeLabel *canvas.Text
 	if e.Type == models.EnemyBoss {
-		typeLabel = components.MakeLabel("БОСС", components.ColorRed)
+		typeLabel = components.MakeLabel("boss", components.ColorRed)
 		typeLabel.TextStyle = fyne.TextStyle{Bold: true}
 	} else {
-		typeLabel = components.MakeLabel("", components.ColorTextDim)
+		typeLabel = components.MakeLabel("regular", components.ColorTextDim)
 	}
 
 	nameText := components.MakeTitle(e.Name, components.ColorText, 15)
 	descText := components.MakeLabel(e.Description, components.ColorTextDim)
+	statusText := components.MakeLabel("Статус: unlocked/current", components.ColorAccentBright)
 
 	statsText := components.MakeLabel(
 		fmt.Sprintf("HP: %d  ATK: %d", e.HP, e.Attack),
@@ -427,13 +415,24 @@ func (a *App) buildEnemyCard(e models.Enemy) *fyne.Container {
 		components.ColorGold,
 	)
 
-	fightBtn := widget.NewButtonWithIcon("Сражаться!", theme.MediaPlayIcon(), func() {
+	canFight, canFightErr := a.engine.CanFightCurrentEnemy(e.ID)
+	fightBtn := widget.NewButtonWithIcon("В бой", theme.MediaPlayIcon(), func() {
 		a.startBattle(e)
 	})
 	fightBtn.Importance = widget.HighImportance
+	if !canFight || canFightErr != nil {
+		fightBtn.Disable()
+	}
+
+	var hintText fyne.CanvasObject = layout.NewSpacer()
+	if canFightErr != nil {
+		hintText = components.MakeLabel("Ошибка проверки боя: "+canFightErr.Error(), components.ColorRed)
+	} else if a.engine.GetAttempts() <= 0 {
+		hintText = components.MakeLabel("Нет попыток — выполни квест, чтобы получить попытки.", components.ColorRed)
+	}
 
 	topRow := container.NewHBox(rankBadge, nameText, typeLabel, layout.NewSpacer(), fightBtn)
-	content := container.NewVBox(topRow, descText, statsText, rewardText)
+	content := container.NewVBox(topRow, descText, statsText, statusText, rewardText, hintText)
 	return components.MakeCard(content)
 }
 
@@ -461,17 +460,24 @@ func (a *App) showBattleScreen() {
 	state := a.currentBattle
 
 	battleWindow := a.app.NewWindow(fmt.Sprintf("Бой: %s", state.Enemy.Name))
-	battleWindow.Resize(fyne.NewSize(700, 650))
+	battleWindow.Resize(fyne.NewSize(760, 760))
 	battleWindow.CenterOnScreen()
 
-	var contentRef *fyne.Container
-	var cellButtons []*widget.Button
-	var gridContainer *fyne.Container
+	topRef := container.NewVBox()
+	rightRef := container.NewVBox()
+	centerRef := container.NewCenter()
+	bottomRef := container.NewVBox()
+
+	var cells []*battleCell
 	var inputSequence []int
 	var inputErrors int
-	var progressLabel *canvas.Text
+	var primaryStatus *canvas.Text
+	var secondaryStatus *canvas.Text
 	var confirmBtn *widget.Button
 	var resetBtn *widget.Button
+	var resolved bool
+	var resolvedRecord *models.BattleRecord
+	var resolvedErr error
 
 	runOnMain := func(fn func()) {
 		if d, ok := a.app.Driver().(interface{ RunOnMain(func()) }); ok {
@@ -483,21 +489,22 @@ func (a *App) showBattleScreen() {
 
 	var rebuildScreen func()
 	rebuildScreen = func() {
-		contentRef.Objects = nil
+		topRef.Objects = nil
+		rightRef.Objects = nil
+		centerRef.Objects = nil
+		bottomRef.Objects = nil
 
-		// HP bars
-		playerHPBar := components.MakeEXPBar(state.PlayerHP, state.PlayerMaxHP, components.ColorGreen)
-		enemyHPBar := components.MakeEXPBar(state.EnemyHP, state.EnemyMaxHP, components.ColorRed)
-
-		playerLabel := components.MakeTitle(fmt.Sprintf("Охотник HP: %d/%d", state.PlayerHP, state.PlayerMaxHP), components.ColorGreen, 14)
-		enemyLabel := components.MakeTitle(fmt.Sprintf("%s HP: %d/%d", state.Enemy.Name, state.EnemyHP, state.EnemyMaxHP), components.ColorRed, 14)
-
-		roundLabel := components.MakeTitle(fmt.Sprintf("Раунд %d", state.Round), components.ColorAccentBright, 16)
-
-		contentRef.Add(container.NewHBox(roundLabel))
-		contentRef.Add(container.NewVBox(playerLabel, playerHPBar))
-		contentRef.Add(container.NewVBox(enemyLabel, enemyHPBar))
-		contentRef.Add(widget.NewSeparator())
+		header := components.MakeTitle(
+			fmt.Sprintf("Бой: %s • Раунд %d", state.Enemy.Name, state.Round),
+			components.ColorAccentBright, 18,
+		)
+		topRef.Add(header)
+		topRef.Add(container.NewGridWithColumns(
+			3,
+			buildBattleHPRow("Охотник", state.PlayerHP, state.PlayerMaxHP, components.ColorGreen),
+			buildBattleHPRow(state.Enemy.Name, state.EnemyHP, state.EnemyMaxHP, components.ColorRed),
+			buildBattleAttemptsBox(a.engine.GetAttempts()),
+		))
 
 		if state.BattleOver {
 			var resultText string
@@ -510,80 +517,113 @@ func (a *App) showBattleScreen() {
 				resultColor = components.ColorRed
 			}
 
-			resultLabel := components.MakeTitle(resultText, resultColor, 24)
-			contentRef.Add(container.NewCenter(resultLabel))
-			contentRef.Add(container.NewCenter(components.MakeLabel("Бои не дают EXP. Это испытание силы.", components.ColorTextDim)))
-
-			// Finish battle and show rewards
-			record, err := a.engine.FinishBattle(state)
-			if err == nil && state.Result == models.BattleWin {
-				if record.RewardTitle != "" {
-					contentRef.Add(components.MakeLabel("Титул открыт: "+record.RewardTitle, components.ColorGold))
-				}
-				if record.RewardBadge != "" {
-					contentRef.Add(components.MakeLabel("Бейдж получен: "+record.RewardBadge, components.ColorGold))
-				}
-				if record.UnlockedEnemyName != "" {
-					contentRef.Add(components.MakeLabel("Открыт новый враг: "+record.UnlockedEnemyName, components.ColorAccentBright))
-				}
+			if !resolved {
+				resolvedRecord, resolvedErr = a.engine.FinishBattle(state)
+				resolved = true
 			}
 
-			contentRef.Add(components.MakeLabel(
-				fmt.Sprintf("Точность: %.1f%% | Ошибки: %d",
-					record.Accuracy, state.TotalMisses),
-				components.ColorTextDim,
+			resultCard := components.MakeCard(container.NewVBox(
+				container.NewCenter(components.MakeTitle(resultText, resultColor, 24)),
+				container.NewCenter(components.MakeLabel("Бои не дают EXP. Это испытание силы.", components.ColorTextDim)),
 			))
+			centerRef.Add(container.NewCenter(resultCard))
 
-			if hint := battleStatHint(state, record); hint != "" {
-				contentRef.Add(components.MakeLabel("Подсказка: "+hint, components.ColorAccentBright))
+			sideItems := []fyne.CanvasObject{
+				components.MakeTitle("Итог боя", components.ColorAccentBright, 15),
 			}
+			if resolvedErr != nil {
+				sideItems = append(sideItems, components.MakeLabel("Ошибка завершения боя: "+resolvedErr.Error(), components.ColorRed))
+			} else if state.Result == models.BattleWin && resolvedRecord != nil {
+				if resolvedRecord.RewardTitle != "" {
+					sideItems = append(sideItems, components.MakeLabel("Титул: "+resolvedRecord.RewardTitle, components.ColorGold))
+				}
+				if resolvedRecord.RewardBadge != "" {
+					sideItems = append(sideItems, components.MakeLabel("Бейдж: "+resolvedRecord.RewardBadge, components.ColorGold))
+				}
+				if resolvedRecord.UnlockedEnemyName != "" {
+					sideItems = append(sideItems, components.MakeLabel("Открыт: "+resolvedRecord.UnlockedEnemyName, components.ColorAccentBright))
+				}
+			} else {
+				sideItems = append(sideItems, components.MakeLabel("Поражение не наказывается. Попробуйте позже после квестов.", components.ColorTextDim))
+			}
+			if resolvedRecord != nil {
+				sideItems = append(sideItems,
+					components.MakeLabel(
+						fmt.Sprintf("Точность: %.1f%%", resolvedRecord.Accuracy),
+						components.ColorTextDim,
+					),
+					components.MakeLabel(
+						fmt.Sprintf("Ошибки: %d", state.TotalMisses),
+						components.ColorTextDim,
+					),
+				)
+				if hint := battleStatHint(state, resolvedRecord); hint != "" {
+					sideItems = append(sideItems, components.MakeLabel("Подсказка: "+hint, components.ColorAccentBright))
+				}
+			}
+			rightRef.Add(components.MakeCard(container.NewVBox(sideItems...)))
 
-			closeBtn := widget.NewButtonWithIcon("Закрыть", theme.CancelIcon(), func() {
+			nextLabel := "Закрыть"
+			nextIcon := theme.CancelIcon()
+			if state.Result == models.BattleWin {
+				nextLabel = "Дальше"
+				nextIcon = theme.NavigateNextIcon()
+			}
+			closeBtn := widget.NewButtonWithIcon(nextLabel, nextIcon, func() {
 				battleWindow.Close()
 				a.refreshArenaPanel()
 				a.refreshCharacterPanel()
 				a.refreshStatsPanel()
 			})
 			closeBtn.Importance = widget.HighImportance
-			contentRef.Add(closeBtn)
+			bottomRef.Add(container.NewHBox(layout.NewSpacer(), closeBtn))
 
-			contentRef.Refresh()
+			topRef.Refresh()
+			rightRef.Refresh()
+			centerRef.Refresh()
+			bottomRef.Refresh()
 			return
 		}
 
-		// Show pattern phase
-		infoLabel := components.MakeLabel("Запомните последовательность!", components.ColorGold)
-		metaLabel := components.MakeLabel(
-			fmt.Sprintf("Сетка: %dx%d | Паттерн: %d | Ошибки: %d",
-				state.GridSize, state.GridSize, state.PatternLength, state.AllowedErrors),
-			components.ColorTextDim,
-		)
-		contentRef.Add(container.NewCenter(infoLabel))
-		contentRef.Add(container.NewCenter(metaLabel))
-
 		inputSequence = nil
 		inputErrors = 0
-		progressLabel = components.MakeLabel(
-			fmt.Sprintf("Ввод: 0/%d | Ошибки: 0/%d", state.PatternLength, state.AllowedErrors),
+		primaryStatus = components.MakeLabel("Запомни последовательность", components.ColorGold)
+		secondaryStatus = components.MakeLabel(
+			fmt.Sprintf("Сетка %dx%d • Ввод 0/%d", state.GridSize, state.GridSize, state.PatternLength),
 			components.ColorTextDim,
 		)
-		contentRef.Add(container.NewCenter(progressLabel))
+		secondaryStatus.TextSize = 12
 
-		// Build grid
 		cellCount := state.GridSize * state.GridSize
-		cellButtons = make([]*widget.Button, cellCount)
+		cells = make([]*battleCell, cellCount)
 		var gridCells []fyne.CanvasObject
+		cellSize := cellSizeForGrid(state.GridSize)
 		for i := 0; i < cellCount; i++ {
-			btn := widget.NewButton("", nil)
-			btn.Importance = widget.LowImportance
-			btn.Disable()
-			cellButtons[i] = btn
-			gridCells = append(gridCells, btn)
+			cell := newBattleCell(cellSize)
+			cell.Disable()
+			cell.SetState(battleCellStateIdle)
+			cells[i] = cell
+			gridCells = append(gridCells, cell)
 		}
 
-		cellSize := cellSizeForGrid(state.GridSize)
-		gridContainer = container.New(layout.NewGridWrapLayout(fyne.NewSize(cellSize, cellSize)), gridCells...)
-		contentRef.Add(gridContainer)
+		gridContainer := container.NewGridWithColumns(state.GridSize, gridCells...)
+		fieldCard := components.MakeCard(container.NewPadded(gridContainer))
+		centerContent := container.NewVBox(
+			container.NewCenter(fieldCard),
+			container.NewCenter(primaryStatus),
+			container.NewCenter(secondaryStatus),
+		)
+		centerRef.Add(container.NewCenter(centerContent))
+
+		rightRef.Add(components.MakeCard(container.NewVBox(
+			components.MakeTitle("Параметры", components.ColorAccentBright, 15),
+			components.MakeLabel(fmt.Sprintf("Враг: %s", state.Enemy.Name), components.ColorText),
+			components.MakeLabel(fmt.Sprintf("Ранг: %s", state.Enemy.Rank), components.ColorTextDim),
+			components.MakeLabel(fmt.Sprintf("Сетка: %dx%d", state.GridSize, state.GridSize), components.ColorTextDim),
+			components.MakeLabel(fmt.Sprintf("Паттерн: %d", state.PatternLength), components.ColorTextDim),
+			components.MakeLabel(fmt.Sprintf("Ошибок можно: %d", state.AllowedErrors), components.ColorTextDim),
+			components.MakeLabel("Бои не дают EXP.", components.ColorTextDim),
+		)))
 
 		confirmBtn = widget.NewButtonWithIcon("Подтвердить ход", theme.ConfirmIcon(), func() {
 			err := a.engine.ProcessRound(state, inputSequence)
@@ -599,15 +639,24 @@ func (a *App) showBattleScreen() {
 		resetBtn = widget.NewButtonWithIcon("Сбросить ввод", theme.ViewRefreshIcon(), func() {
 			inputSequence = nil
 			inputErrors = 0
-			progressLabel.Text = fmt.Sprintf("Ввод: 0/%d | Ошибки: 0/%d", state.PatternLength, state.AllowedErrors)
-			progressLabel.Refresh()
+			primaryStatus.Text = fmt.Sprintf("Повтори %d шагов • Ошибок можно: %d", state.PatternLength, state.AllowedErrors)
+			primaryStatus.Color = components.ColorText
+			primaryStatus.Refresh()
+			secondaryStatus.Text = fmt.Sprintf("Сетка %dx%d • Ввод 0/%d", state.GridSize, state.GridSize, state.PatternLength)
+			secondaryStatus.Refresh()
+			for _, c := range cells {
+				c.SetState(battleCellStateIdle)
+			}
 			confirmBtn.Disable()
 		})
 		resetBtn.Importance = widget.MediumImportance
-		contentRef.Add(container.NewHBox(confirmBtn, resetBtn))
-		contentRef.Refresh()
+		bottomRef.Add(container.NewHBox(confirmBtn, resetBtn))
 
-		// Show pattern, then enable input
+		topRef.Refresh()
+		rightRef.Refresh()
+		centerRef.Refresh()
+		bottomRef.Refresh()
+
 		showTimeMs, _ := a.engine.GetShowTimeMs(state.ShowTimeMs)
 		perStep := showTimeMs / len(state.Pattern)
 		if perStep < 150 {
@@ -617,24 +666,23 @@ func (a *App) showBattleScreen() {
 			for _, idx := range state.Pattern {
 				cellIdx := idx
 				runOnMain(func() {
-					cellButtons[cellIdx].Importance = widget.HighImportance
-					cellButtons[cellIdx].Refresh()
+					cells[cellIdx].SetState(battleCellStateShowing)
 				})
 				time.Sleep(time.Duration(perStep) * time.Millisecond)
 				runOnMain(func() {
-					cellButtons[cellIdx].Importance = widget.LowImportance
-					cellButtons[cellIdx].Refresh()
+					cells[cellIdx].SetState(battleCellStateIdle)
 				})
 			}
 
 			runOnMain(func() {
-				infoLabel.Text = fmt.Sprintf("Повторите %d шагов. Ошибки допустимы: %d", state.PatternLength, state.AllowedErrors)
-				infoLabel.Refresh()
+				primaryStatus.Text = fmt.Sprintf("Повтори %d шагов • Ошибок можно: %d", state.PatternLength, state.AllowedErrors)
+				primaryStatus.Color = components.ColorText
+				primaryStatus.Refresh()
 
 				for i := 0; i < cellCount; i++ {
 					idx := i
-					cellButtons[idx].Enable()
-					cellButtons[idx].OnTapped = func() {
+					cells[idx].Enable()
+					cells[idx].SetOnTapped(func() {
 						if len(inputSequence) >= state.PatternLength || inputErrors > state.AllowedErrors {
 							return
 						}
@@ -642,35 +690,31 @@ func (a *App) showBattleScreen() {
 						correct := idx == state.Pattern[len(inputSequence)-1]
 						if !correct {
 							inputErrors++
-						}
-
-						if correct {
-							cellButtons[idx].Importance = widget.MediumImportance
+							cells[idx].SetState(battleCellStateError)
 						} else {
-							cellButtons[idx].Importance = widget.LowImportance
+							cells[idx].SetState(battleCellStateSelected)
 						}
-						cellButtons[idx].Refresh()
 
-						progressLabel.Text = fmt.Sprintf("Ввод: %d/%d | Ошибки: %d/%d", len(inputSequence), state.PatternLength, inputErrors, state.AllowedErrors)
-						progressLabel.Refresh()
+						secondaryStatus.Text = fmt.Sprintf("Сетка %dx%d • Ввод %d/%d", state.GridSize, state.GridSize, len(inputSequence), state.PatternLength)
+						secondaryStatus.Refresh()
 
 						if len(inputSequence) >= state.PatternLength || inputErrors > state.AllowedErrors {
 							confirmBtn.Enable()
 							if inputErrors > state.AllowedErrors {
-								infoLabel.Text = "Лимит ошибок превышен — подтвердите ход"
-								infoLabel.Refresh()
+								primaryStatus.Text = "Лимит ошибок превышен • Нажми Подтвердить"
+								primaryStatus.Color = components.ColorRed
+								primaryStatus.Refresh()
 							}
 						}
-					}
+					})
 				}
 			})
 		}()
 	}
 
-	contentRef = container.NewVBox()
+	root := container.NewBorder(topRef, bottomRef, nil, rightRef, centerRef)
+	battleWindow.SetContent(container.NewPadded(root))
 	rebuildScreen()
-
-	battleWindow.SetContent(container.NewVScroll(container.NewPadded(contentRef)))
 	battleWindow.Show()
 }
 
@@ -678,18 +722,25 @@ func (a *App) showBossScreen() {
 	state := a.currentBoss
 
 	battleWindow := a.app.NewWindow(fmt.Sprintf("Босс: %s", state.Enemy.Name))
-	battleWindow.Resize(fyne.NewSize(740, 700))
+	battleWindow.Resize(fyne.NewSize(760, 760))
 	battleWindow.CenterOnScreen()
 
-	var contentRef *fyne.Container
-	var cellButtons []*widget.Button
-	var gridContainer *fyne.Container
+	topRef := container.NewVBox()
+	rightRef := container.NewVBox()
+	centerRef := container.NewCenter()
+	bottomRef := container.NewVBox()
+
+	var cells []*battleCell
 	var inputSequence []int
 	var inputErrors int
-	var progressLabel *canvas.Text
+	var primaryStatus *canvas.Text
+	var secondaryStatus *canvas.Text
 	var confirmBtn *widget.Button
 	var resetBtn *widget.Button
 	var timerLabel *canvas.Text
+	var resolved bool
+	var resolvedRecord *models.BattleRecord
+	var resolvedErr error
 
 	runOnMain := func(fn func()) {
 		if d, ok := a.app.Driver().(interface{ RunOnMain(func()) }); ok {
@@ -701,20 +752,22 @@ func (a *App) showBossScreen() {
 
 	var rebuildScreen func()
 	rebuildScreen = func() {
-		contentRef.Objects = nil
+		topRef.Objects = nil
+		rightRef.Objects = nil
+		centerRef.Objects = nil
+		bottomRef.Objects = nil
 
-		playerHPBar := components.MakeEXPBar(state.PlayerHP, state.PlayerMaxHP, components.ColorGreen)
-		enemyHPBar := components.MakeEXPBar(state.EnemyHP, state.EnemyMaxHP, components.ColorRed)
-
-		playerLabel := components.MakeTitle(fmt.Sprintf("Охотник HP: %d/%d", state.PlayerHP, state.PlayerMaxHP), components.ColorGreen, 14)
-		enemyLabel := components.MakeTitle(fmt.Sprintf("%s HP: %d/%d", state.Enemy.Name, state.EnemyHP, state.EnemyMaxHP), components.ColorRed, 14)
-
-		phaseLabel := components.MakeTitle(fmt.Sprintf("Фаза: %s", phaseDisplay(state.Phase)), components.ColorAccentBright, 16)
-
-		contentRef.Add(container.NewHBox(phaseLabel))
-		contentRef.Add(container.NewVBox(playerLabel, playerHPBar))
-		contentRef.Add(container.NewVBox(enemyLabel, enemyHPBar))
-		contentRef.Add(widget.NewSeparator())
+		header := components.MakeTitle(
+			fmt.Sprintf("Бой: %s • %s", state.Enemy.Name, phaseDisplay(state.Phase)),
+			components.ColorAccentBright, 18,
+		)
+		topRef.Add(header)
+		topRef.Add(container.NewGridWithColumns(
+			3,
+			buildBattleHPRow("Охотник", state.PlayerHP, state.PlayerMaxHP, components.ColorGreen),
+			buildBattleHPRow(state.Enemy.Name, state.EnemyHP, state.EnemyMaxHP, components.ColorRed),
+			buildBattleAttemptsBox(a.engine.GetAttempts()),
+		))
 
 		if state.Phase == boss.PhaseWin || state.Phase == boss.PhaseLose {
 			var resultText string
@@ -727,80 +780,108 @@ func (a *App) showBossScreen() {
 				resultColor = components.ColorRed
 			}
 
-			resultLabel := components.MakeTitle(resultText, resultColor, 24)
-			contentRef.Add(container.NewCenter(resultLabel))
-			contentRef.Add(container.NewCenter(components.MakeLabel("Бои не дают EXP. Это испытание силы.", components.ColorTextDim)))
+			if !resolved {
+				if state.Phase == boss.PhaseWin {
+					resolvedRecord, resolvedErr = a.engine.FinishBoss(state)
+				} else {
+					resolvedRecord, resolvedErr = a.engine.FailBoss(state)
+				}
+				resolved = true
+			}
 
-			var record *models.BattleRecord
-			var err error
-			if state.Phase == boss.PhaseWin {
-				record, err = a.engine.FinishBoss(state)
+			centerRef.Add(container.NewCenter(components.MakeCard(container.NewVBox(
+				container.NewCenter(components.MakeTitle(resultText, resultColor, 24)),
+				container.NewCenter(components.MakeLabel("Бои не дают EXP. Это испытание силы.", components.ColorTextDim)),
+			))))
+
+			sideItems := []fyne.CanvasObject{
+				components.MakeTitle("Итог боя", components.ColorAccentBright, 15),
+			}
+			if resolvedErr != nil {
+				sideItems = append(sideItems, components.MakeLabel("Ошибка завершения боя: "+resolvedErr.Error(), components.ColorRed))
+			} else if state.Phase == boss.PhaseWin && resolvedRecord != nil {
+				if resolvedRecord.RewardTitle != "" {
+					sideItems = append(sideItems, components.MakeLabel("Титул: "+resolvedRecord.RewardTitle, components.ColorGold))
+				}
+				if resolvedRecord.RewardBadge != "" {
+					sideItems = append(sideItems, components.MakeLabel("Бейдж: "+resolvedRecord.RewardBadge, components.ColorGold))
+				}
+				if resolvedRecord.UnlockedEnemyName != "" {
+					sideItems = append(sideItems, components.MakeLabel("Открыт: "+resolvedRecord.UnlockedEnemyName, components.ColorAccentBright))
+				}
 			} else {
-				record, err = a.engine.FailBoss(state)
+				sideItems = append(sideItems, components.MakeLabel("Поражение не наказывается. Попробуйте позже после квестов.", components.ColorTextDim))
 			}
-			if err == nil && state.Phase == boss.PhaseWin {
-				if record.RewardTitle != "" {
-					contentRef.Add(components.MakeLabel("Титул открыт: "+record.RewardTitle, components.ColorGold))
-				}
-				if record.RewardBadge != "" {
-					contentRef.Add(components.MakeLabel("Бейдж получен: "+record.RewardBadge, components.ColorGold))
-				}
-				if record.UnlockedEnemyName != "" {
-					contentRef.Add(components.MakeLabel("Открыт новый враг: "+record.UnlockedEnemyName, components.ColorAccentBright))
-				}
+			if resolvedRecord != nil {
+				sideItems = append(sideItems,
+					components.MakeLabel(fmt.Sprintf("Точность: %.1f%%", resolvedRecord.Accuracy), components.ColorTextDim),
+					components.MakeLabel(fmt.Sprintf("Ошибки: %d", state.TotalMisses), components.ColorTextDim),
+				)
 			}
+			rightRef.Add(components.MakeCard(container.NewVBox(sideItems...)))
 
-			contentRef.Add(components.MakeLabel(
-				fmt.Sprintf("Точность: %.1f%% | Ошибки: %d",
-					record.Accuracy, state.TotalMisses),
-				components.ColorTextDim,
-			))
-
-			closeBtn := widget.NewButtonWithIcon("Закрыть", theme.CancelIcon(), func() {
+			nextLabel := "Закрыть"
+			nextIcon := theme.CancelIcon()
+			if state.Phase == boss.PhaseWin {
+				nextLabel = "Дальше"
+				nextIcon = theme.NavigateNextIcon()
+			}
+			closeBtn := widget.NewButtonWithIcon(nextLabel, nextIcon, func() {
 				battleWindow.Close()
 				a.refreshArenaPanel()
 				a.refreshCharacterPanel()
 				a.refreshStatsPanel()
 			})
 			closeBtn.Importance = widget.HighImportance
-			contentRef.Add(closeBtn)
+			bottomRef.Add(container.NewHBox(layout.NewSpacer(), closeBtn))
 
-			contentRef.Refresh()
+			topRef.Refresh()
+			rightRef.Refresh()
+			centerRef.Refresh()
+			bottomRef.Refresh()
 			return
 		}
 
 		if state.Phase == boss.PhaseMemory {
-			infoLabel := components.MakeLabel("Фаза 1: Tactical Memory", components.ColorGold)
-			metaLabel := components.MakeLabel(
-				fmt.Sprintf("Сетка: %dx%d | Паттерн: %d | Ошибки: %d",
-					state.Memory.GridSize, state.Memory.GridSize, state.Memory.PatternLength, state.Memory.AllowedErrors),
-				components.ColorTextDim,
-			)
-			contentRef.Add(container.NewCenter(infoLabel))
-			contentRef.Add(container.NewCenter(metaLabel))
-
 			inputSequence = nil
 			inputErrors = 0
-			progressLabel = components.MakeLabel(
-				fmt.Sprintf("Ввод: 0/%d | Ошибки: 0/%d", state.Memory.PatternLength, state.Memory.AllowedErrors),
+			primaryStatus = components.MakeLabel(
+				fmt.Sprintf("Повтори %d шагов • Ошибок можно: %d", state.Memory.PatternLength, state.Memory.AllowedErrors),
+				components.ColorText,
+			)
+			secondaryStatus = components.MakeLabel(
+				fmt.Sprintf("Сетка %dx%d • Ввод 0/%d", state.Memory.GridSize, state.Memory.GridSize, state.Memory.PatternLength),
 				components.ColorTextDim,
 			)
-			contentRef.Add(container.NewCenter(progressLabel))
+			secondaryStatus.TextSize = 12
 
 			cellCount := state.Memory.GridSize * state.Memory.GridSize
-			cellButtons = make([]*widget.Button, cellCount)
+			cells = make([]*battleCell, cellCount)
 			var gridCells []fyne.CanvasObject
+			cellSize := cellSizeForGrid(state.Memory.GridSize)
 			for i := 0; i < cellCount; i++ {
-				btn := widget.NewButton("", nil)
-				btn.Importance = widget.LowImportance
-				btn.Disable()
-				cellButtons[i] = btn
-				gridCells = append(gridCells, btn)
+				cell := newBattleCell(cellSize)
+				cell.Disable()
+				cell.SetState(battleCellStateIdle)
+				cells[i] = cell
+				gridCells = append(gridCells, cell)
 			}
 
-			cellSize := cellSizeForGrid(state.Memory.GridSize)
-			gridContainer = container.New(layout.NewGridWrapLayout(fyne.NewSize(cellSize, cellSize)), gridCells...)
-			contentRef.Add(gridContainer)
+			gridContainer := container.NewGridWithColumns(state.Memory.GridSize, gridCells...)
+			fieldCard := components.MakeCard(container.NewPadded(gridContainer))
+			centerRef.Add(container.NewCenter(container.NewVBox(
+				container.NewCenter(fieldCard),
+				container.NewCenter(primaryStatus),
+				container.NewCenter(secondaryStatus),
+			)))
+
+			rightRef.Add(components.MakeCard(container.NewVBox(
+				components.MakeTitle("Фаза 1", components.ColorAccentBright, 15),
+				components.MakeLabel("Tactical Memory", components.ColorGold),
+				components.MakeLabel(fmt.Sprintf("Сетка: %dx%d", state.Memory.GridSize, state.Memory.GridSize), components.ColorTextDim),
+				components.MakeLabel(fmt.Sprintf("Паттерн: %d", state.Memory.PatternLength), components.ColorTextDim),
+				components.MakeLabel(fmt.Sprintf("Ошибок можно: %d", state.Memory.AllowedErrors), components.ColorTextDim),
+			)))
 
 			confirmBtn = widget.NewButtonWithIcon("Подтвердить ход", theme.ConfirmIcon(), func() {
 				err := a.engine.ProcessBossMemory(state, inputSequence)
@@ -816,13 +897,23 @@ func (a *App) showBossScreen() {
 			resetBtn = widget.NewButtonWithIcon("Сбросить ввод", theme.ViewRefreshIcon(), func() {
 				inputSequence = nil
 				inputErrors = 0
-				progressLabel.Text = fmt.Sprintf("Ввод: 0/%d | Ошибки: 0/%d", state.Memory.PatternLength, state.Memory.AllowedErrors)
-				progressLabel.Refresh()
+				primaryStatus.Text = fmt.Sprintf("Повтори %d шагов • Ошибок можно: %d", state.Memory.PatternLength, state.Memory.AllowedErrors)
+				primaryStatus.Color = components.ColorText
+				primaryStatus.Refresh()
+				secondaryStatus.Text = fmt.Sprintf("Сетка %dx%d • Ввод 0/%d", state.Memory.GridSize, state.Memory.GridSize, state.Memory.PatternLength)
+				secondaryStatus.Refresh()
+				for _, c := range cells {
+					c.SetState(battleCellStateIdle)
+				}
 				confirmBtn.Disable()
 			})
 			resetBtn.Importance = widget.MediumImportance
-			contentRef.Add(container.NewHBox(confirmBtn, resetBtn))
-			contentRef.Refresh()
+			bottomRef.Add(container.NewHBox(confirmBtn, resetBtn))
+
+			topRef.Refresh()
+			rightRef.Refresh()
+			centerRef.Refresh()
+			bottomRef.Refresh()
 
 			showTimeMs, _ := a.engine.GetShowTimeMs(state.Memory.ShowTimeMs)
 			perStep := showTimeMs / len(state.Memory.Pattern)
@@ -833,24 +924,23 @@ func (a *App) showBossScreen() {
 				for _, idx := range state.Memory.Pattern {
 					cellIdx := idx
 					runOnMain(func() {
-						cellButtons[cellIdx].Importance = widget.HighImportance
-						cellButtons[cellIdx].Refresh()
+						cells[cellIdx].SetState(battleCellStateShowing)
 					})
 					time.Sleep(time.Duration(perStep) * time.Millisecond)
 					runOnMain(func() {
-						cellButtons[cellIdx].Importance = widget.LowImportance
-						cellButtons[cellIdx].Refresh()
+						cells[cellIdx].SetState(battleCellStateIdle)
 					})
 				}
 
 				runOnMain(func() {
-					infoLabel.Text = fmt.Sprintf("Повторите %d шагов. Ошибки допустимы: %d", state.Memory.PatternLength, state.Memory.AllowedErrors)
-					infoLabel.Refresh()
+					primaryStatus.Text = fmt.Sprintf("Повтори %d шагов • Ошибок можно: %d", state.Memory.PatternLength, state.Memory.AllowedErrors)
+					primaryStatus.Color = components.ColorText
+					primaryStatus.Refresh()
 
 					for i := 0; i < cellCount; i++ {
 						idx := i
-						cellButtons[idx].Enable()
-						cellButtons[idx].OnTapped = func() {
+						cells[idx].Enable()
+						cells[idx].SetOnTapped(func() {
 							if len(inputSequence) >= state.Memory.PatternLength || inputErrors > state.Memory.AllowedErrors {
 								return
 							}
@@ -858,26 +948,23 @@ func (a *App) showBossScreen() {
 							correct := idx == state.Memory.Pattern[len(inputSequence)-1]
 							if !correct {
 								inputErrors++
-							}
-
-							if correct {
-								cellButtons[idx].Importance = widget.MediumImportance
+								cells[idx].SetState(battleCellStateError)
 							} else {
-								cellButtons[idx].Importance = widget.LowImportance
+								cells[idx].SetState(battleCellStateSelected)
 							}
-							cellButtons[idx].Refresh()
 
-							progressLabel.Text = fmt.Sprintf("Ввод: %d/%d | Ошибки: %d/%d", len(inputSequence), state.Memory.PatternLength, inputErrors, state.Memory.AllowedErrors)
-							progressLabel.Refresh()
+							secondaryStatus.Text = fmt.Sprintf("Сетка %dx%d • Ввод %d/%d", state.Memory.GridSize, state.Memory.GridSize, len(inputSequence), state.Memory.PatternLength)
+							secondaryStatus.Refresh()
 
 							if len(inputSequence) >= state.Memory.PatternLength || inputErrors > state.Memory.AllowedErrors {
 								confirmBtn.Enable()
 								if inputErrors > state.Memory.AllowedErrors {
-									infoLabel.Text = "Лимит ошибок превышен — подтвердите ход"
-									infoLabel.Refresh()
+									primaryStatus.Text = "Лимит ошибок превышен • Нажми Подтвердить"
+									primaryStatus.Color = components.ColorRed
+									primaryStatus.Refresh()
 								}
 							}
-						}
+						})
 					}
 				})
 			}()
@@ -885,17 +972,12 @@ func (a *App) showBossScreen() {
 		}
 
 		if state.Phase == boss.PhasePressure {
-			infoLabel := components.MakeLabel("Фаза 2: Pressure Puzzle", components.ColorGold)
-			contentRef.Add(container.NewCenter(infoLabel))
-
 			timerLabel = components.MakeLabel("", components.ColorRed)
-			contentRef.Add(container.NewCenter(timerLabel))
 
 			stepsLabel := components.MakeLabel(
 				fmt.Sprintf("Шаги: %d | Ошибки: %d | Попытки: %d", state.Puzzle.Steps, state.Puzzle.AllowedErrors, state.Puzzle.AttemptsLeft),
 				components.ColorTextDim,
 			)
-			contentRef.Add(container.NewCenter(stepsLabel))
 
 			numbers := make([]int, state.Puzzle.Steps)
 			for i := 0; i < state.Puzzle.Steps; i++ {
@@ -922,15 +1004,28 @@ func (a *App) showBossScreen() {
 				buttons = append(buttons, btn)
 			}
 
-			gridSize := 3
-			if state.Puzzle.Steps >= 7 {
-				gridSize = 4
+			cols := 3
+			if state.Puzzle.Steps > 9 {
+				cols = 4
 			}
-			cellSize := float32(70)
-			grid := container.New(layout.NewGridWrapLayout(fyne.NewSize(cellSize, cellSize)), buttons...)
-			contentRef.Add(container.NewCenter(grid))
+			grid := container.NewGridWithColumns(cols, buttons...)
+			centerRef.Add(container.NewCenter(components.MakeCard(container.NewPadded(container.NewVBox(
+				container.NewCenter(components.MakeLabel("Фаза 2: Pressure Puzzle", components.ColorGold)),
+				container.NewCenter(timerLabel),
+				container.NewCenter(stepsLabel),
+				container.NewCenter(grid),
+			)))))
 
-			contentRef.Refresh()
+			rightRef.Add(components.MakeCard(container.NewVBox(
+				components.MakeTitle("Фаза 2", components.ColorAccentBright, 15),
+				components.MakeLabel("Pressure Puzzle", components.ColorGold),
+				components.MakeLabel("Быстро нажимайте числа по порядку.", components.ColorTextDim),
+			)))
+
+			topRef.Refresh()
+			rightRef.Refresh()
+			centerRef.Refresh()
+			bottomRef.Refresh()
 
 			go func() {
 				deadline := time.Now().Add(time.Duration(state.Puzzle.TimeLimitMs) * time.Millisecond)
@@ -951,15 +1046,13 @@ func (a *App) showBossScreen() {
 					time.Sleep(100 * time.Millisecond)
 				}
 			}()
-			_ = gridSize
 			return
 		}
 	}
 
-	contentRef = container.NewVBox()
+	root := container.NewBorder(topRef, bottomRef, nil, rightRef, centerRef)
+	battleWindow.SetContent(container.NewPadded(root))
 	rebuildScreen()
-
-	battleWindow.SetContent(container.NewVScroll(container.NewPadded(contentRef)))
 	battleWindow.Show()
 }
 
@@ -1030,16 +1123,262 @@ func battleStatHint(state *models.BattleState, record *models.BattleRecord) stri
 func cellSizeForGrid(grid int) float32 {
 	switch grid {
 	case 3:
-		return 90
+		return 96
 	case 4:
-		return 70
+		return 78
 	case 5:
-		return 58
+		return 64
 	case 6:
-		return 50
+		return 54
 	default:
-		return 55
+		return 60
 	}
+}
+
+func buildBattleHPRow(name string, current, max int, fillColor color.Color) fyne.CanvasObject {
+	label := components.MakeLabel(fmt.Sprintf("%s %d/%d", name, current, max), components.ColorText)
+	label.TextSize = 13
+	bar := makeBattleMiniHPBar(current, max, fillColor)
+	return container.NewVBox(label, bar)
+}
+
+func buildBattleAttemptsBox(attempts int) fyne.CanvasObject {
+	label := components.MakeLabel(fmt.Sprintf("Попытки %d/%d", attempts, models.MaxAttempts), components.ColorText)
+	label.TextSize = 13
+	bar := makeBattleMiniHPBar(attempts, models.MaxAttempts, components.ColorAccentBright)
+	return container.NewVBox(label, bar)
+}
+
+func makeBattleMiniHPBar(current, max int, fillColor color.Color) *fyne.Container {
+	ratio := 0.0
+	if max > 0 {
+		ratio = float64(current) / float64(max)
+	}
+	if ratio < 0 {
+		ratio = 0
+	}
+	if ratio > 1 {
+		ratio = 1
+	}
+
+	bg := canvas.NewRectangle(color.NRGBA{R: 24, G: 22, B: 40, A: 255})
+	bg.CornerRadius = 6
+	bg.SetMinSize(fyne.NewSize(180, 12))
+	bg.StrokeWidth = 1
+	bg.StrokeColor = color.NRGBA{R: 70, G: 64, B: 102, A: 180}
+
+	fill := canvas.NewRectangle(fillColor)
+	fill.CornerRadius = 6
+
+	return container.NewStack(
+		bg,
+		container.New(&battleBarLayout{ratio: ratio}, fill),
+	)
+}
+
+type battleBarLayout struct {
+	ratio float64
+}
+
+func (p *battleBarLayout) MinSize(_ []fyne.CanvasObject) fyne.Size {
+	return fyne.NewSize(180, 12)
+}
+
+func (p *battleBarLayout) Layout(objects []fyne.CanvasObject, containerSize fyne.Size) {
+	for _, obj := range objects {
+		obj.Move(fyne.NewPos(0, 0))
+		obj.Resize(fyne.NewSize(containerSize.Width*float32(p.ratio), containerSize.Height))
+	}
+}
+
+type battleCellState int
+
+const (
+	battleCellStateIdle battleCellState = iota
+	battleCellStateShowing
+	battleCellStateSelected
+	battleCellStateError
+)
+
+type battleCell struct {
+	widget.BaseWidget
+
+	minSize  fyne.Size
+	state    battleCellState
+	disabled bool
+	onTapped func()
+}
+
+func newBattleCell(side float32) *battleCell {
+	if side < 44 {
+		side = 44
+	}
+	c := &battleCell{
+		minSize:  fyne.NewSize(side, side),
+		state:    battleCellStateIdle,
+		disabled: true,
+	}
+	c.ExtendBaseWidget(c)
+	return c
+}
+
+func (c *battleCell) CreateRenderer() fyne.WidgetRenderer {
+	glow := canvas.NewRectangle(color.Transparent)
+	glow.CornerRadius = 10
+
+	fill := canvas.NewRectangle(color.Transparent)
+	fill.CornerRadius = 8
+
+	r := &battleCellRenderer{
+		cell:    c,
+		glow:    glow,
+		fill:    fill,
+		objects: []fyne.CanvasObject{glow, fill},
+	}
+	r.Refresh()
+	return r
+}
+
+func (c *battleCell) SetOnTapped(fn func()) {
+	c.onTapped = fn
+}
+
+func (c *battleCell) SetState(state battleCellState) {
+	c.state = state
+	c.Refresh()
+}
+
+func (c *battleCell) Enable() {
+	c.disabled = false
+	c.Refresh()
+}
+
+func (c *battleCell) Disable() {
+	c.disabled = true
+	c.Refresh()
+}
+
+func (c *battleCell) Tapped(_ *fyne.PointEvent) {
+	if c.disabled || c.onTapped == nil {
+		return
+	}
+	c.onTapped()
+}
+
+func (c *battleCell) TappedSecondary(_ *fyne.PointEvent) {}
+
+type battleCellRenderer struct {
+	cell    *battleCell
+	glow    *canvas.Rectangle
+	fill    *canvas.Rectangle
+	objects []fyne.CanvasObject
+}
+
+func (r *battleCellRenderer) Layout(size fyne.Size) {
+	const gap = float32(4)
+	const glowGap = float32(2)
+
+	glowSize := fyne.NewSize(maxFloat32(size.Width-2*glowGap, 0), maxFloat32(size.Height-2*glowGap, 0))
+	r.glow.Move(fyne.NewPos(glowGap, glowGap))
+	r.glow.Resize(glowSize)
+
+	fillSize := fyne.NewSize(maxFloat32(size.Width-2*gap, 0), maxFloat32(size.Height-2*gap, 0))
+	r.fill.Move(fyne.NewPos(gap, gap))
+	r.fill.Resize(fillSize)
+}
+
+func (r *battleCellRenderer) MinSize() fyne.Size {
+	return r.cell.minSize
+}
+
+func (r *battleCellRenderer) Refresh() {
+	fillClr, borderClr, glowClr := battleCellPalette(r.cell.state, r.cell.disabled)
+
+	r.fill.FillColor = fillClr
+	r.fill.StrokeColor = borderClr
+	r.fill.StrokeWidth = 1.4
+
+	r.glow.FillColor = color.Transparent
+	r.glow.StrokeColor = glowClr
+	if glowClr.A > 0 {
+		r.glow.StrokeWidth = 2.0
+	} else {
+		r.glow.StrokeWidth = 0
+	}
+
+	r.fill.Refresh()
+	r.glow.Refresh()
+}
+
+func (r *battleCellRenderer) Objects() []fyne.CanvasObject {
+	return r.objects
+}
+
+func (r *battleCellRenderer) Destroy() {}
+
+func (r *battleCellRenderer) BackgroundColor() color.Color {
+	return color.Transparent
+}
+
+func battleCellPalette(state battleCellState, disabled bool) (color.NRGBA, color.NRGBA, color.NRGBA) {
+	type palette struct {
+		fill   color.NRGBA
+		border color.NRGBA
+		glow   color.NRGBA
+	}
+
+	idle := palette{
+		fill:   color.NRGBA{R: 38, G: 35, B: 58, A: 220},
+		border: color.NRGBA{R: 88, G: 82, B: 128, A: 220},
+		glow:   color.NRGBA{R: 0, G: 0, B: 0, A: 0},
+	}
+	showing := palette{
+		fill:   color.NRGBA{R: 118, G: 94, B: 255, A: 235},
+		border: color.NRGBA{R: 170, G: 149, B: 255, A: 255},
+		glow:   color.NRGBA{R: 152, G: 128, B: 255, A: 170},
+	}
+	selected := palette{
+		fill:   color.NRGBA{R: 82, G: 126, B: 228, A: 235},
+		border: color.NRGBA{R: 126, G: 165, B: 255, A: 255},
+		glow:   color.NRGBA{R: 110, G: 148, B: 255, A: 140},
+	}
+	err := palette{
+		fill:   color.NRGBA{R: 138, G: 46, B: 56, A: 245},
+		border: color.NRGBA{R: 214, G: 84, B: 96, A: 255},
+		glow:   color.NRGBA{R: 214, G: 84, B: 96, A: 160},
+	}
+
+	current := idle
+	switch state {
+	case battleCellStateShowing:
+		current = showing
+	case battleCellStateSelected:
+		current = selected
+	case battleCellStateError:
+		current = err
+	}
+
+	if disabled {
+		current.fill.A = dimAlpha(current.fill.A, 45)
+		current.border.A = dimAlpha(current.border.A, 65)
+		current.glow.A = dimAlpha(current.glow.A, 85)
+	}
+
+	return current.fill, current.border, current.glow
+}
+
+func dimAlpha(src uint8, delta uint8) uint8 {
+	if src <= delta {
+		return 0
+	}
+	return src - delta
+}
+
+func maxFloat32(a, b float32) float32 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 // ================================================================

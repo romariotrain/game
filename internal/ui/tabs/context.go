@@ -14,15 +14,17 @@ type Context struct {
 	App      fyne.App
 	Features config.Features
 
-	CharacterPanel *fyne.Container
-	QuestsPanel    *fyne.Container
-	StatsPanel     *fyne.Container
-	DungeonsPanel  *fyne.Container
+	CharacterPanel    *fyne.Container
+	QuestsPanel       *fyne.Container
+	StatsPanel        *fyne.Container
+	DungeonsPanel     *fyne.Container
+	AchievementsPanel *fyne.Container
 
-	RefreshAll       func()
-	RefreshCharacter func()
-	RefreshQuests    func()
-	RefreshStats     func()
-	RefreshDungeons  func()
-	RefreshHistory   func()
+	RefreshAll          func()
+	RefreshCharacter    func()
+	RefreshQuests       func()
+	RefreshStats        func()
+	RefreshDungeons     func()
+	RefreshAchievements func()
+	RefreshHistory      func()
 }

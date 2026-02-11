@@ -154,6 +154,16 @@ type Character struct {
 	Attempts int
 }
 
+type Achievement struct {
+	ID          int64
+	Key         string
+	Title       string
+	Description string
+	Category    string
+	ObtainedAt  *time.Time
+	IsUnlocked  bool
+}
+
 type HunterProfile struct {
 	CharID                   int64
 	About                    string

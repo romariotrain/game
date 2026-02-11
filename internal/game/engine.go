@@ -22,12 +22,16 @@ func NewEngine(db *database.DB) (*Engine, error) {
 	if err != nil {
 		return nil, fmt.Errorf("init character: %w", err)
 	}
-	return &Engine{
+	e := &Engine{
 		DB:                    db,
 		Character:             char,
 		RecommendationSource:  "rule-based",
 		RecommendationDetails: "инициализация",
-	}, nil
+	}
+	if err := e.InitAchievements(); err != nil {
+		return nil, fmt.Errorf("init achievements: %w", err)
+	}
+	return e, nil
 }
 
 // ============================================================
@@ -144,14 +148,14 @@ func (e *Engine) GetEnemies() ([]models.Enemy, error) {
 // ============================================================
 
 func (e *Engine) StartBattle(enemyID int64) (*models.BattleState, error) {
-	// Spend 1 attempt
-	if err := e.DB.SpendAttempt(e.Character.ID); err != nil {
-		return nil, fmt.Errorf("нет попыток для боя! Выполняйте задания, чтобы получить попытки")
-	}
-	e.Character.Attempts--
-
-	enemy, err := e.DB.GetEnemyByID(enemyID)
+	enemy, err := e.validateCurrentEnemyForFight(enemyID)
 	if err != nil {
+		return nil, err
+	}
+	if enemy.Type == models.EnemyBoss {
+		return nil, fmt.Errorf("этот противник требует бой с боссом")
+	}
+	if err := e.spendBattleAttempt(); err != nil {
 		return nil, err
 	}
 
@@ -343,19 +347,14 @@ func (e *Engine) FinishBattle(state *models.BattleState) (*models.BattleRecord, 
 			record.RewardTitle = title
 			record.RewardBadge = badge
 
-			// Unlock next enemy in sequence
-			allEnemies, err := e.DB.GetAllEnemies()
+			nextName, err := e.unlockNextEnemy(state.Enemy.ID)
 			if err != nil {
 				return nil, err
 			}
-			for i := range allEnemies {
-				if allEnemies[i].ID == state.Enemy.ID && i+1 < len(allEnemies) {
-					next := allEnemies[i+1]
-					_ = e.DB.UnlockEnemy(e.Character.ID, next.ID)
-					record.UnlockedEnemyName = next.Name
-					break
-				}
-			}
+			record.UnlockedEnemyName = nextName
+		}
+		if err := e.UnlockAchievement(AchievementFirstBattle); err != nil {
+			return nil, err
 		}
 	}
 

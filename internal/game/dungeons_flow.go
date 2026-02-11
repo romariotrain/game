@@ -172,7 +172,10 @@ func (e *Engine) CompleteDungeon(dungeonID int64) error {
 	if err := e.DB.UpdateDungeonStatus(dungeonID, models.DungeonCompleted); err != nil {
 		return err
 	}
-	return e.DB.CompleteDungeon(e.Character.ID, dungeonID, dungeon.RewardTitle)
+	if err := e.DB.CompleteDungeon(e.Character.ID, dungeonID, dungeon.RewardTitle); err != nil {
+		return err
+	}
+	return e.UnlockAchievement(AchievementFirstDungeon)
 }
 
 // GetDungeonProgress returns (completed, total) quest counts for a dungeon

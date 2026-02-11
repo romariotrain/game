@@ -113,6 +113,11 @@ func (e *Engine) CompleteQuest(questID int64) (*CompleteResult, error) {
 	totalAttempts, _ := e.DB.AddAttempts(e.Character.ID, attemptsAwarded)
 	e.Character.Attempts = totalAttempts
 
+	// First completion achievement (idempotent).
+	if err := e.UnlockAchievement(AchievementFirstTask); err != nil {
+		return nil, err
+	}
+
 	// Check streak milestones
 	e.CheckStreakMilestones()
 
@@ -185,6 +190,9 @@ func (e *Engine) CheckStreakMilestones() {
 	streak, err := e.DB.GetStreak(e.Character.ID)
 	if err != nil {
 		return
+	}
+	if streak >= 7 {
+		_ = e.UnlockAchievement(AchievementStreak7)
 	}
 	for _, m := range models.AllStreakMilestones() {
 		if streak >= m.Days {

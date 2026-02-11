@@ -42,7 +42,7 @@ func RefreshProgress(ctx *Context) {
 	rankCard := buildRankStatsCard(stats)
 	ctx.StatsPanel.Add(rankCard)
 
-	if ctx.Features.Combat && !ctx.Features.MinimalMode {
+	if ctx.Features.Combat {
 		battleStats, err := ctx.Engine.GetBattleStats()
 		if err == nil && battleStats.TotalBattles > 0 {
 			bCard := buildBattleStatsCard(battleStats)

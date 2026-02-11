@@ -2,7 +2,12 @@ package tabs
 
 import (
 	"fmt"
+	"image/color"
+	"os"
+	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -38,10 +43,13 @@ func RefreshToday(ctx *Context) {
 	overallLevel, _ := ctx.Engine.GetOverallLevel()
 	rankTitle := game.HunterRank(overallLevel)
 
-	completedDungeons, _ := ctx.Engine.DB.GetCompletedDungeons(ctx.Engine.Character.ID)
-
-	charCard := buildCharacterCard(ctx, overallLevel, rankTitle, stats, completedDungeons)
-	ctx.CharacterPanel.Add(charCard)
+	charCard := buildCharacterCard(ctx, overallLevel, rankTitle, stats)
+	rightTopCard := buildDailyProgressCard(ctx)
+	rightMin := canvas.NewRectangle(color.Transparent)
+	rightMin.SetMinSize(fyne.NewSize(320, 250))
+	rightPane := container.NewStack(rightMin, rightTopCard)
+	topRow := container.NewGridWithColumns(2, charCard, rightPane)
+	ctx.CharacterPanel.Add(topRow)
 
 	// Streak + Attempts in one row
 	streakAttemptsCard := buildStreakAttemptsCard(ctx)
@@ -52,20 +60,11 @@ func RefreshToday(ctx *Context) {
 	ctx.CharacterPanel.Add(components.MakeSectionHeader("Задания на сегодня"))
 	buildTodayQuests(ctx)
 
-	// Stats summary
-	ctx.CharacterPanel.Add(widget.NewSeparator())
-	ctx.CharacterPanel.Add(components.MakeSectionHeader("Характеристики"))
-	for _, stat := range stats {
-		row := components.MakeStatRow(stat)
-		card := components.MakeCard(row)
-		ctx.CharacterPanel.Add(card)
-	}
-
 	ctx.CharacterPanel.Refresh()
 }
 
-func buildCharacterCard(ctx *Context, level int, rank string, stats []models.StatLevel, completedDungeons []models.CompletedDungeon) *fyne.Container {
-	nameText := components.MakeTitle(ctx.Engine.Character.Name, components.ColorGold, 24)
+func buildCharacterCard(ctx *Context, level int, rank string, stats []models.StatLevel) *fyne.Container {
+	nameText := components.MakeTitle(ctx.Engine.Character.Name, components.ColorGold, 20)
 	editBtn := widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), func() {
 		entry := widget.NewEntry()
 		entry.SetText(ctx.Engine.Character.Name)
@@ -79,57 +78,283 @@ func buildCharacterCard(ctx *Context, level int, rank string, stats []models.Sta
 			}, ctx.Window)
 	})
 
-	nameRow := container.NewHBox(nameText, editBtn)
+	nameRow := container.NewHBox(nameText, layout.NewSpacer(), editBtn)
 
 	rankColor := components.ParseHexColor(game.HunterRankColor(level))
 	rankText := canvas.NewText(rank, rankColor)
-	rankText.TextSize = 16
+	rankText.TextSize = 14
 	rankText.TextStyle = fyne.TextStyle{Bold: true}
 
-	levelText := components.MakeTitle(fmt.Sprintf("Общий уровень: %d", level), components.ColorText, 16)
+	levelText := components.MakeLabel(fmt.Sprintf("Lv.%d", level), components.ColorTextDim)
+	levelText.TextSize = 11
+	totalEXP := 0
+	for _, stat := range stats {
+		totalEXP += stat.TotalEXP
+	}
+	expText := components.MakeLabel(fmt.Sprintf("EXP %d", totalEXP), components.ColorTextDim)
+	expText.TextSize = 11
+	statsAura := buildCompactStatBlock(stats)
 
-	var statSummary []fyne.CanvasObject
+	metaGap := canvas.NewRectangle(color.Transparent)
+	metaGap.SetMinSize(fyne.NewSize(8, 0))
+	metaRow := container.NewHBox(rankText, metaGap, levelText, metaGap, expText)
+
+	rightItems := []fyne.CanvasObject{
+		nameRow,
+		metaRow,
+		widget.NewSeparator(),
+		statsAura,
+	}
+
+	avatarPane := buildHunterAvatarPane()
+	rightPane := container.NewVBox(rightItems...)
+	gap := canvas.NewRectangle(color.Transparent)
+	gap.SetMinSize(fyne.NewSize(10, 0))
+	row := container.NewHBox(avatarPane, gap, rightPane, layout.NewSpacer())
+	return makeTopCard(row, fyne.NewSize(0, 250))
+}
+
+func buildHunterAvatarPane() fyne.CanvasObject {
+	const avatarWidth float32 = 150
+	const avatarHeight float32 = 190
+
+	bg := canvas.NewRectangle(color.NRGBA{R: 24, G: 28, B: 44, A: 255})
+	bg.CornerRadius = 8
+	bg.SetMinSize(fyne.NewSize(avatarWidth, avatarHeight))
+
+	avatarPath := resolveAvatarPath()
+	if avatarPath != "" {
+		avatar := canvas.NewImageFromFile(avatarPath)
+		avatar.FillMode = canvas.ImageFillContain
+		avatar.SetMinSize(fyne.NewSize(avatarWidth, avatarHeight))
+		return container.NewStack(bg, avatar)
+	}
+
+	placeholder := canvas.NewImageFromResource(theme.AccountIcon())
+	placeholder.FillMode = canvas.ImageFillContain
+	placeholder.SetMinSize(fyne.NewSize(92, 92))
+	return container.NewStack(bg, container.NewCenter(placeholder))
+}
+
+func buildDailyProgressCard(ctx *Context) *fyne.Container {
+	enemyName := "Неизвестный враг"
+	enemyRankText := "?"
+	if ctx.Features.Combat {
+		enemy, err := ctx.Engine.GetCurrentEnemy()
+		if err == nil && enemy != nil {
+			enemyName = enemy.Name
+			enemyRankText = string(enemy.Rank)
+		} else if err == nil && enemy == nil {
+			enemyName = "Новый враг скоро"
+		}
+	}
+
+	quests, _ := ctx.Engine.DB.GetActiveQuests(ctx.Engine.Character.ID)
+	activities, _ := ctx.Engine.DB.GetDailyActivityLast30(ctx.Engine.Character.ID)
+	today := time.Now().Format("2006-01-02")
+	completedToday := 0
+	failedToday := 0
+	for _, a := range activities {
+		if a.Date == today {
+			completedToday = a.QuestsComplete
+			failedToday = a.QuestsFailed
+			break
+		}
+	}
+	activeToday := len(quests)
+	totalToday := completedToday + failedToday + activeToday
+	if totalToday < 1 {
+		totalToday = 1
+	}
+
+	errorLimit := 3
+	attempts := ctx.Engine.GetAttempts()
+
+	ctaLabel := "⚔️ Вступить в бой"
+	ctaEnabled := ctx.Features.Combat && attempts > 0
+	if failedToday > 0 && ctaEnabled {
+		ctaLabel = "Продолжить бой"
+	}
+	if !ctaEnabled {
+		ctaLabel = "Бой недоступен"
+	}
+	ctaBtn := widget.NewButtonWithIcon(ctaLabel, theme.MediaPlayIcon(), func() {
+		dialog.ShowInformation("Бой", "Открой вкладку Tower для запуска боя.", ctx.Window)
+	})
+	ctaBtn.Importance = widget.HighImportance
+	if !ctaEnabled {
+		ctaBtn.Disable()
+	}
+
+	todayTitle := components.MakeLabel("Сегодня", components.ColorTextDim)
+	todayTitle.TextSize = 12
+	todayValue := components.MakeTitle(fmt.Sprintf("Выполнено %d/%d", completedToday, totalToday), components.ColorText, 15)
+	todayErrors := components.MakeLabel(fmt.Sprintf("Ошибки %d/%d", failedToday, errorLimit), components.ColorTextDim)
+	todayErrors.TextSize = 12
+	todayTile := makeTopCard(
+		container.NewVBox(
+			todayTitle,
+			todayValue,
+			makeMiniProgressBar(completedToday, totalToday, components.ColorAccentBright),
+			todayErrors,
+		),
+		fyne.NewSize(0, 100),
+	)
+
+	attemptsTitle := components.MakeLabel("Попытки", components.ColorTextDim)
+	attemptsTitle.TextSize = 12
+	attemptsValue := components.MakeTitle(fmt.Sprintf("%d/%d", attempts, models.MaxAttempts), components.ColorText, 18)
+	attemptsState := components.MakeLabel("Ресурс боя", components.ColorTextDim)
+	attemptsState.TextSize = 12
+	attemptsTile := makeTopCard(
+		container.NewVBox(
+			attemptsTitle,
+			attemptsValue,
+			makeMiniProgressBar(attempts, models.MaxAttempts, components.ColorAccent),
+			attemptsState,
+		),
+		fyne.NewSize(0, 100),
+	)
+
+	enemyIcon := canvas.NewImageFromResource(theme.VisibilityIcon())
+	enemyIcon.FillMode = canvas.ImageFillContain
+	enemyIcon.SetMinSize(fyne.NewSize(32, 32))
+	enemyIconBg := canvas.NewRectangle(color.NRGBA{R: 22, G: 22, B: 38, A: 255})
+	enemyIconBg.CornerRadius = 7
+	enemyIconBg.SetMinSize(fyne.NewSize(44, 44))
+	enemyIconBox := container.NewStack(enemyIconBg, container.NewCenter(enemyIcon))
+
+	enemyTitle := components.MakeLabel("Враг дня", components.ColorTextDim)
+	enemyTitle.TextSize = 12
+	enemyNameLabel := components.MakeTitle(enemyName, components.ColorText, 15)
+	enemyRankLabel := components.MakeLabel(fmt.Sprintf("Ранг %s", enemyRankText), components.ColorTextDim)
+	enemyRankLabel.TextSize = 12
+	enemyInfo := container.NewVBox(enemyTitle, enemyNameLabel, enemyRankLabel)
+
+	enemyTile := makeTopCard(
+		container.NewVBox(
+			container.NewHBox(enemyIconBox, enemyInfo, layout.NewSpacer()),
+			layout.NewSpacer(),
+			ctaBtn,
+		),
+		fyne.NewSize(0, 138),
+	)
+
+	topMetrics := container.NewGridWithColumns(2, todayTile, attemptsTile)
+	gap := canvas.NewRectangle(color.Transparent)
+	gap.SetMinSize(fyne.NewSize(0, 8))
+	return container.NewVBox(topMetrics, gap, enemyTile)
+}
+
+func buildCompactStatBlock(stats []models.StatLevel) fyne.CanvasObject {
+	statByType := make(map[models.StatType]models.StatLevel)
 	for _, s := range stats {
-		txt := components.MakeLabel(fmt.Sprintf("%s %s: %d", s.StatType.Icon(), s.StatType.DisplayName(), s.Level), components.ColorTextDim)
-		statSummary = append(statSummary, txt)
+		statByType[s.StatType] = s
 	}
 
-	top := container.NewVBox(nameRow, rankText, levelText)
-	statsRow := container.NewHBox(statSummary...)
+	statOrder := []models.StatType{
+		models.StatStrength,
+		models.StatAgility,
+		models.StatIntellect,
+		models.StatEndurance,
+	}
 
-	contentItems := []fyne.CanvasObject{top, widget.NewSeparator(), statsRow}
+	var chips []fyne.CanvasObject
+	for _, statType := range statOrder {
+		stat := statByType[statType]
+		if stat.Level < 1 {
+			stat.Level = 1
+		}
+		expNeeded := models.ExpForLevel(stat.Level)
+		if stat.CurrentEXP < 0 {
+			stat.CurrentEXP = 0
+		}
+		if stat.CurrentEXP > expNeeded {
+			stat.CurrentEXP = expNeeded
+		}
 
-	// Show titles: dungeon titles + battle titles + streak titles
-	var allTitles []string
+		code := components.MakeLabel(fmt.Sprintf("%s %d", statShortCode(statType), stat.Level), components.ColorText)
+		code.TextSize = 12
+		code.TextStyle = fyne.TextStyle{Bold: true}
+		expText := components.MakeLabel(fmt.Sprintf("EXP %d/%d", stat.CurrentEXP, expNeeded), components.ColorTextDim)
+		expText.TextSize = 11
+		chips = append(chips, makeStatChip(container.NewVBox(code, expText)))
+	}
 
-	for _, cd := range completedDungeons {
-		if cd.EarnedTitle != "" {
-			allTitles = append(allTitles, cd.EarnedTitle)
+	return container.NewGridWithColumns(2, chips...)
+}
+
+func statShortCode(statType models.StatType) string {
+	switch statType {
+	case models.StatStrength:
+		return "STR"
+	case models.StatAgility:
+		return "AGI"
+	case models.StatIntellect:
+		return "INT"
+	case models.StatEndurance:
+		return "STA"
+	default:
+		return "STAT"
+	}
+}
+
+func makeTopCard(content fyne.CanvasObject, minSize fyne.Size) *fyne.Container {
+	bg := canvas.NewRectangle(components.ColorBGCard)
+	bg.CornerRadius = 8
+	bg.SetMinSize(minSize)
+	inset := container.New(layout.NewCustomPaddedLayout(10, 10, 10, 10), content)
+	return container.NewStack(bg, inset)
+}
+
+func makeStatChip(content fyne.CanvasObject) fyne.CanvasObject {
+	bg := canvas.NewRectangle(color.NRGBA{R: 22, G: 22, B: 38, A: 230})
+	bg.CornerRadius = 6
+	bg.SetMinSize(fyne.NewSize(0, 50))
+	inset := container.New(layout.NewCustomPaddedLayout(8, 8, 8, 8), content)
+	return container.NewStack(bg, inset)
+}
+
+func makeMiniProgressBar(current, max int, barColor color.Color) fyne.CanvasObject {
+	if max <= 0 {
+		max = 1
+	}
+	if current < 0 {
+		current = 0
+	}
+	if current > max {
+		current = max
+	}
+
+	ratio := float32(current) / float32(max)
+
+	bg := canvas.NewRectangle(color.NRGBA{R: 30, G: 30, B: 50, A: 255})
+	bg.CornerRadius = 3
+	bg.SetMinSize(fyne.NewSize(140, 8))
+
+	fill := canvas.NewRectangle(barColor)
+	fill.CornerRadius = 3
+	fill.SetMinSize(fyne.NewSize(140*ratio, 8))
+
+	return container.NewStack(bg, container.NewHBox(fill, layout.NewSpacer()))
+}
+
+func resolveAvatarPath() string {
+	candidates := []string{
+		filepath.Join("assets", "avatar.png"),
+	}
+
+	if exePath, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exePath)
+		candidates = append(candidates, filepath.Join(exeDir, "assets", "avatar.png"))
+	}
+
+	for _, p := range candidates {
+		if info, err := os.Stat(p); err == nil && !info.IsDir() {
+			return p
 		}
 	}
-
-	battleRewards, _ := ctx.Engine.DB.GetAllBattleRewards(ctx.Engine.Character.ID)
-	for _, r := range battleRewards {
-		if r.Title != "" {
-			allTitles = append(allTitles, r.Title)
-		}
-	}
-
-	streakTitles, _ := ctx.Engine.DB.GetStreakTitles(ctx.Engine.Character.ID)
-	allTitles = append(allTitles, streakTitles...)
-
-	if len(allTitles) > 0 {
-		var titleWidgets []fyne.CanvasObject
-		titleWidgets = append(titleWidgets, components.MakeTitle("Титулы:", components.ColorGold, 13))
-		for _, t := range allTitles {
-			titleWidgets = append(titleWidgets, components.MakeLabel("  "+t, components.ColorPurple))
-		}
-		contentItems = append(contentItems, widget.NewSeparator())
-		contentItems = append(contentItems, container.NewVBox(titleWidgets...))
-	}
-
-	content := container.NewVBox(contentItems...)
-	return components.MakeCard(content)
+	return ""
 }
 
 func buildStreakAttemptsCard(ctx *Context) *fyne.Container {
@@ -182,75 +407,161 @@ func buildTodayQuests(ctx *Context) {
 		return
 	}
 
-	for _, quest := range quests {
-		q := quest
-		rankBadge := components.MakeRankBadge(q.Rank)
-		titleText := components.MakeTitle(q.Title, components.ColorText, 14)
+	var mainQuests []models.Quest
+	var mediumQuests []models.Quest
+	var quickQuests []models.Quest
 
-		var typeIndicator fyne.CanvasObject
-		if q.IsDaily {
-			lbl := components.MakeLabel("Ежедневное", components.ColorBlue)
-			lbl.TextSize = 11
-			typeIndicator = lbl
-		} else if q.DungeonID != nil {
-			lbl := components.MakeLabel("Данж", components.ColorPurple)
-			lbl.TextSize = 11
-			typeIndicator = lbl
-		} else {
-			typeIndicator = layout.NewSpacer()
+	for _, q := range quests {
+		switch classifyTodayQuest(q) {
+		case "main":
+			mainQuests = append(mainQuests, q)
+		case "medium":
+			mediumQuests = append(mediumQuests, q)
+		default:
+			quickQuests = append(quickQuests, q)
+		}
+	}
+
+	sortTodayQuestSection(mainQuests)
+	sortTodayQuestSection(mediumQuests)
+	sortTodayQuestSection(quickQuests)
+
+	accordion := widget.NewAccordion(
+		widget.NewAccordionItem(
+			fmt.Sprintf("Главные (%d)", len(mainQuests)),
+			buildTodayQuestSection(ctx, mainQuests),
+		),
+		widget.NewAccordionItem(
+			fmt.Sprintf("Средние (%d)", len(mediumQuests)),
+			buildTodayQuestSection(ctx, mediumQuests),
+		),
+		widget.NewAccordionItem(
+			fmt.Sprintf("Быстрые (%d)", len(quickQuests)),
+			buildTodayQuestSection(ctx, quickQuests),
+		),
+	)
+	accordion.Open(0)
+	ctx.CharacterPanel.Add(accordion)
+}
+
+func buildTodayQuestSection(ctx *Context, quests []models.Quest) fyne.CanvasObject {
+	if len(quests) == 0 {
+		return components.MakeEmptyState("Нет задач в этой группе.")
+	}
+	section := container.NewVBox()
+	for _, q := range quests {
+		section.Add(buildTodayQuestCard(ctx, q))
+	}
+	return section
+}
+
+func buildTodayQuestCard(ctx *Context, q models.Quest) *fyne.Container {
+	rankBadge := components.MakeRankBadge(q.Rank)
+	titleText := components.MakeTitle(q.Title, components.ColorText, 14)
+
+	var typeIndicator fyne.CanvasObject
+	if q.IsDaily {
+		lbl := components.MakeLabel("Ежедневное", components.ColorBlue)
+		lbl.TextSize = 11
+		typeIndicator = lbl
+	} else if q.DungeonID != nil {
+		lbl := components.MakeLabel("Данж", components.ColorPurple)
+		lbl.TextSize = 11
+		typeIndicator = lbl
+	} else {
+		typeIndicator = layout.NewSpacer()
+	}
+
+	statText := components.MakeLabel(
+		fmt.Sprintf("+%d EXP -> %s | Ранг: %s | +%d попыток",
+			q.Exp, q.TargetStat.DisplayName(), q.Rank, models.AttemptsForQuestEXP(q.Exp)),
+		components.ColorTextDim,
+	)
+
+	completeBtn := widget.NewButtonWithIcon("", theme.ConfirmIcon(), func() {
+		result, err := ctx.Engine.CompleteQuest(q.ID)
+		if err != nil {
+			dialog.ShowError(err, ctx.Window)
+			return
 		}
 
-		statText := components.MakeLabel(
-			fmt.Sprintf("+%d EXP -> %s | Ранг: %s | +%d попыток",
-				q.Exp, q.TargetStat.DisplayName(), q.Rank, models.AttemptsForQuestEXP(q.Exp)),
-			components.ColorTextDim,
-		)
-
-		completeBtn := widget.NewButtonWithIcon("", theme.ConfirmIcon(), func() {
-			result, err := ctx.Engine.CompleteQuest(q.ID)
-			if err != nil {
-				dialog.ShowError(err, ctx.Window)
-				return
-			}
-
-			msg := fmt.Sprintf("+%d EXP к %s %s\n+%d попыток боя (всего: %d)",
-				result.EXPAwarded, result.StatType.Icon(), result.StatType.DisplayName(),
-				result.AttemptsAwarded, result.TotalAttempts)
-			if result.LeveledUp {
-				msg += fmt.Sprintf("\n\nУРОВЕНЬ ПОВЫШЕН! %s: %d -> %d",
-					result.StatType.DisplayName(), result.OldLevel, result.NewLevel)
-				for lvl := result.OldLevel + 1; lvl <= result.NewLevel; lvl++ {
-					options := game.GetSkillOptions(result.StatType, lvl)
-					if len(options) > 0 {
-						msg += fmt.Sprintf("\nНовый скил на уровне %d!", lvl)
-						showSkillUnlockDialog(ctx, result.StatType, lvl)
-					}
+		msg := fmt.Sprintf("+%d EXP к %s %s\n+%d попыток боя (всего: %d)",
+			result.EXPAwarded, result.StatType.Icon(), result.StatType.DisplayName(),
+			result.AttemptsAwarded, result.TotalAttempts)
+		if result.LeveledUp {
+			msg += fmt.Sprintf("\n\nУРОВЕНЬ ПОВЫШЕН! %s: %d -> %d",
+				result.StatType.DisplayName(), result.OldLevel, result.NewLevel)
+			for lvl := result.OldLevel + 1; lvl <= result.NewLevel; lvl++ {
+				options := game.GetSkillOptions(result.StatType, lvl)
+				if len(options) > 0 {
+					msg += fmt.Sprintf("\nНовый скил на уровне %d!", lvl)
+					showSkillUnlockDialog(ctx, result.StatType, lvl)
 				}
 			}
+		}
 
-			if q.DungeonID != nil {
-				done, err := ctx.Engine.CheckDungeonCompletion(*q.DungeonID)
-				if err == nil && done {
-					if err := ctx.Engine.CompleteDungeon(*q.DungeonID); err == nil {
-						msg += "\n\nДАНЖ ПРОЙДЕН! Получена награда!"
-					}
+		if q.DungeonID != nil {
+			done, err := ctx.Engine.CheckDungeonCompletion(*q.DungeonID)
+			if err == nil && done {
+				if err := ctx.Engine.CompleteDungeon(*q.DungeonID); err == nil {
+					msg += "\n\nДАНЖ ПРОЙДЕН! Получена награда!"
 				}
 			}
-			if text := strings.TrimSpace(q.Congratulations); text != "" {
-				msg += "\n\n" + text
-			}
+		}
+		if text := strings.TrimSpace(q.Congratulations); text != "" {
+			msg += "\n\n" + text
+		}
 
-			dialog.ShowInformation("Задание выполнено!", msg, ctx.Window)
+		dialog.ShowInformation("Задание выполнено!", msg, ctx.Window)
 
-			if ctx.RefreshAll != nil {
-				ctx.RefreshAll()
-			}
-		})
-		completeBtn.Importance = widget.HighImportance
+		if ctx.RefreshAll != nil {
+			ctx.RefreshAll()
+		}
+	})
+	completeBtn.Importance = widget.HighImportance
 
-		topRow := container.NewHBox(rankBadge, titleText, typeIndicator, layout.NewSpacer(), completeBtn)
-		card := components.MakeCard(container.NewVBox(topRow, statText))
-		ctx.CharacterPanel.Add(card)
+	topRow := container.NewHBox(rankBadge, titleText, typeIndicator, layout.NewSpacer(), completeBtn)
+	return components.MakeCard(container.NewVBox(topRow, statText))
+}
+
+func classifyTodayQuest(q models.Quest) string {
+	if q.Rank == models.RankA || q.Rank == models.RankB || q.Exp > 30 {
+		return "main"
+	}
+	if q.Rank == models.RankC || q.Rank == models.RankD || (q.Exp >= 15 && q.Exp <= 30) {
+		return "medium"
+	}
+	return "quick"
+}
+
+func sortTodayQuestSection(quests []models.Quest) {
+	sort.Slice(quests, func(i, j int) bool {
+		leftRank := questRankSortWeight(quests[i].Rank)
+		rightRank := questRankSortWeight(quests[j].Rank)
+		if leftRank != rightRank {
+			return leftRank > rightRank
+		}
+		if quests[i].Exp != quests[j].Exp {
+			return quests[i].Exp > quests[j].Exp
+		}
+		return strings.ToLower(quests[i].Title) < strings.ToLower(quests[j].Title)
+	})
+}
+
+func questRankSortWeight(rank models.QuestRank) int {
+	switch rank {
+	case models.RankS:
+		return 6
+	case models.RankA:
+		return 5
+	case models.RankB:
+		return 4
+	case models.RankC:
+		return 3
+	case models.RankD:
+		return 2
+	default:
+		return 1
 	}
 }
 

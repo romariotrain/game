@@ -11,14 +11,14 @@ import (
 )
 
 func (e *Engine) StartBossBattle(enemyID int64) (*boss.State, error) {
-	// Spend 1 attempt
-	if err := e.DB.SpendAttempt(e.Character.ID); err != nil {
-		return nil, fmt.Errorf("нет попыток для боя! Выполняйте задания, чтобы получить попытки")
-	}
-	e.Character.Attempts--
-
-	enemy, err := e.DB.GetEnemyByID(enemyID)
+	enemy, err := e.validateCurrentEnemyForFight(enemyID)
 	if err != nil {
+		return nil, err
+	}
+	if enemy.Type != models.EnemyBoss {
+		return nil, fmt.Errorf("босс не выбран: текущий враг не является боссом")
+	}
+	if err := e.spendBattleAttempt(); err != nil {
 		return nil, err
 	}
 
@@ -124,19 +124,15 @@ func (e *Engine) FinishBoss(state *boss.State) (*models.BattleRecord, error) {
 		record.RewardTitle = title
 		record.RewardBadge = badge
 
-		// Unlock next enemy in sequence
-		allEnemies, err := e.DB.GetAllEnemies()
+		nextName, err := e.unlockNextEnemy(state.Enemy.ID)
 		if err != nil {
 			return nil, err
 		}
-		for i := range allEnemies {
-			if allEnemies[i].ID == state.Enemy.ID && i+1 < len(allEnemies) {
-				next := allEnemies[i+1]
-				_ = e.DB.UnlockEnemy(e.Character.ID, next.ID)
-				record.UnlockedEnemyName = next.Name
-				break
-			}
-		}
+		record.UnlockedEnemyName = nextName
+	}
+
+	if err := e.UnlockAchievement(AchievementFirstBattle); err != nil {
+		return nil, err
 	}
 
 	if err := e.DB.InsertBattle(record); err != nil {
