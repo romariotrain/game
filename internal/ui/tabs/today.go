@@ -25,7 +25,10 @@ import (
 func BuildToday(ctx *Context) fyne.CanvasObject {
 	ctx.CharacterPanel = container.NewVBox()
 	RefreshToday(ctx)
-	return container.NewVScroll(container.NewPadded(ctx.CharacterPanel))
+
+	// The CharacterPanel is rebuilt each refresh as a Border layout.
+	// Wrap in a stack so the CharacterPanel reference stays stable.
+	return container.NewStack(ctx.CharacterPanel)
 }
 
 func RefreshToday(ctx *Context) {
@@ -43,28 +46,34 @@ func RefreshToday(ctx *Context) {
 	overallLevel, _ := ctx.Engine.GetOverallLevel()
 	rankTitle := game.HunterRank(overallLevel)
 
+	// --- Top zone: character card + enemy card side by side, fixed height ---
 	charCard := buildCharacterCard(ctx, overallLevel, rankTitle, stats)
 	enemyCard := buildEnemyDayCard(ctx)
+	topRow := container.NewGridWithColumns(2, charCard, enemyCard)
 
-	leftMin := canvas.NewRectangle(color.Transparent)
-	leftMin.SetMinSize(fyne.NewSize(420, 280))
-	leftPane := container.NewStack(leftMin, charCard)
+	// --- Middle zone: compact streak line ---
+	streakLine := buildStreakLine(ctx)
 
-	rightMin := canvas.NewRectangle(color.Transparent)
-	rightMin.SetMinSize(fyne.NewSize(280, 280))
-	rightPane := container.NewStack(rightMin, enemyCard)
+	// --- Top block = cards + streak ---
+	topBlock := container.NewVBox(topRow, streakLine)
 
-	topRow := container.NewGridWithColumns(2, leftPane, rightPane)
-	ctx.CharacterPanel.Add(topRow)
+	// --- Bottom zone: quests fill all remaining space ---
+	questsHeader := components.MakeSectionHeader("Задания на сегодня")
+	questsContent := buildTodayQuestsWidget(ctx)
+	questsScroll := container.NewVScroll(container.NewPadded(questsContent))
 
-	// Streak + Attempts in one row
-	streakAttemptsCard := buildStreakAttemptsCard(ctx)
-	ctx.CharacterPanel.Add(streakAttemptsCard)
+	questsBlock := container.NewBorder(questsHeader, nil, nil, nil, questsScroll)
 
-	// Today's active quests - full width
-	ctx.CharacterPanel.Add(container.NewPadded(components.MakeSectionHeader("Задания на сегодня")))
-	buildTodayQuests(ctx)
+	// --- Assemble: top fixed, quests stretch ---
+	root := container.NewBorder(
+		container.NewPadded(topBlock),    // top — fixed
+		nil,                              // bottom
+		nil,                              // left
+		nil,                              // right
+		container.NewPadded(questsBlock), // center — stretches
+	)
 
+	ctx.CharacterPanel.Add(root)
 	ctx.CharacterPanel.Refresh()
 }
 
@@ -120,7 +129,7 @@ func buildCharacterCard(ctx *Context, level int, rank string, stats []models.Sta
 	rightPane := container.NewVBox(rightItems...)
 	rightPaneWithInset := container.New(layout.NewCustomPaddedLayout(0, 0, 10, 0), rightPane)
 	row := container.NewBorder(nil, nil, avatarPane, nil, rightPaneWithInset)
-	return makeTopCard(row, fyne.NewSize(0, 280))
+	return makeTopCard(row, fyne.NewSize(0, 320))
 }
 
 func buildHunterAvatarPane() fyne.CanvasObject {
@@ -193,7 +202,7 @@ func buildStatBlockWithBars(stats []models.StatLevel) fyne.CanvasObject {
 	}
 
 	rows := container.NewVBox()
-	for _, statType := range statOrder {
+	for i, statType := range statOrder {
 		stat := statByType[statType]
 		if stat.Level < 1 {
 			stat.Level = 1
@@ -222,6 +231,13 @@ func buildStatBlockWithBars(stats []models.StatLevel) fyne.CanvasObject {
 		bar := makeColoredProgressBar(stat.CurrentEXP, expNeeded, barColor)
 
 		rows.Add(container.NewVBox(headerRow, bar))
+
+		// Add spacing between stats (not after the last one)
+		if i < len(statOrder)-1 {
+			spacer := canvas.NewRectangle(color.Transparent)
+			spacer.SetMinSize(fyne.NewSize(0, 6))
+			rows.Add(spacer)
+		}
 	}
 
 	return rows
@@ -411,7 +427,7 @@ func buildEnemyDayCard(ctx *Context) *fyne.Container {
 		ctaSection,
 	)
 
-	return makeTopCard(content, fyne.NewSize(0, 280))
+	return makeTopCard(content, fyne.NewSize(0, 320))
 }
 
 // buildDifficultySection compares player stats to enemy floor to show difficulty.
@@ -516,19 +532,17 @@ func buildAttemptsBlocks(attempts int) fyne.CanvasObject {
 // Streak + Attempts Card
 // =============================================================================
 
-func buildStreakAttemptsCard(ctx *Context) *fyne.Container {
+func buildStreakLine(ctx *Context) fyne.CanvasObject {
 	streak, _ := ctx.Engine.DB.GetStreak(ctx.Engine.Character.ID)
 
-	// Streak section
-	streakText := components.MakeTitle(fmt.Sprintf("🔥 Streak: %d дней", streak), components.ColorAccentBright, 20)
+	streakLabel := components.MakeTitle(fmt.Sprintf("🔥 Streak: %d дней", streak), components.ColorAccentBright, 14)
 
-	var milestoneText fyne.CanvasObject
+	var milestoneLabel *canvas.Text
 	title := models.StreakTitle(streak)
 	if title != "" {
-		milestoneText = components.MakeLabel(title, components.ColorGold)
+		milestoneLabel = canvas.NewText(title, components.ColorGold)
 	} else if streak == 0 {
-		motivate := components.MakeTitle("Начни сегодня!", components.ColorAccentBright, 14)
-		milestoneText = motivate
+		milestoneLabel = canvas.NewText("Начни сегодня!", components.ColorAccentBright)
 	} else {
 		nextMilestone := 7
 		for _, m := range models.AllStreakMilestones() {
@@ -537,30 +551,34 @@ func buildStreakAttemptsCard(ctx *Context) *fyne.Container {
 				break
 			}
 		}
-		milestoneText = components.MakeLabel(
-			fmt.Sprintf("До награды за %d дней streak", nextMilestone),
+		milestoneLabel = canvas.NewText(
+			fmt.Sprintf("До награды: %d дн.", nextMilestone-streak),
 			components.ColorTextDim,
 		)
 	}
+	milestoneLabel.TextSize = 13
 
-	content := container.NewVBox(streakText, milestoneText)
-	return components.MakeCard(content)
+	sep := canvas.NewText("|", components.ColorTextDim)
+	sep.TextSize = 13
+
+	bg := canvas.NewRectangle(components.ColorBGCard)
+	bg.CornerRadius = 6
+	row := container.NewHBox(streakLabel, sep, milestoneLabel)
+	return container.NewStack(bg, container.New(layout.NewCustomPaddedLayout(6, 6, 10, 10), row))
 }
 
 // =============================================================================
 // Today's Quests
 // =============================================================================
 
-func buildTodayQuests(ctx *Context) {
+func buildTodayQuestsWidget(ctx *Context) fyne.CanvasObject {
 	quests, err := ctx.Engine.DB.GetActiveQuests(ctx.Engine.Character.ID)
 	if err != nil {
-		ctx.CharacterPanel.Add(components.MakeLabel("Ошибка: "+err.Error(), components.ColorRed))
-		return
+		return components.MakeLabel("Ошибка: "+err.Error(), components.ColorRed)
 	}
 
 	if len(quests) == 0 {
-		ctx.CharacterPanel.Add(components.MakeEmptyState("Нет активных заданий. Создайте новое!"))
-		return
+		return components.MakeEmptyState("Нет активных заданий. Создайте новое!")
 	}
 
 	var mainQuests []models.Quest
@@ -597,7 +615,7 @@ func buildTodayQuests(ctx *Context) {
 		),
 	)
 	accordion.Open(0)
-	ctx.CharacterPanel.Add(accordion)
+	return accordion
 }
 
 func buildTodayQuestSection(ctx *Context, quests []models.Quest) fyne.CanvasObject {
