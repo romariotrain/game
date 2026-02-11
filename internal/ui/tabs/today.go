@@ -2,7 +2,9 @@ package tabs
 
 import (
 	"fmt"
+	"image"
 	"image/color"
+	"image/png"
 	"os"
 	"path/filepath"
 	"sort"
@@ -84,8 +86,8 @@ func RefreshToday(ctx *Context) {
 
 func buildCharacterCard(ctx *Context, level int, rank string, stats []models.StatLevel) *fyne.Container {
 	// --- Portrait (large) ---
-	const portraitW float32 = 210
-	const portraitH float32 = 260
+	const portraitW float32 = 256
+	const portraitH float32 = 316
 	portraitBg := canvas.NewRectangle(color.NRGBA{R: 18, G: 18, B: 32, A: 255})
 	portraitBg.CornerRadius = 10
 	portraitBg.SetMinSize(fyne.NewSize(portraitW, portraitH))
@@ -93,13 +95,16 @@ func buildCharacterCard(ctx *Context, level int, rank string, stats []models.Sta
 	var portraitBox fyne.CanvasObject
 	if avatarPath := resolveAvatarPath(); avatarPath != "" {
 		avatar := canvas.NewImageFromFile(avatarPath)
+		if trimmed := loadTrimmedAvatar(avatarPath); trimmed != nil {
+			avatar = canvas.NewImageFromImage(trimmed)
+		}
 		avatar.FillMode = canvas.ImageFillContain
 		avatar.SetMinSize(fyne.NewSize(portraitW, portraitH))
 		portraitBox = container.NewStack(portraitBg, avatar)
 	} else {
 		placeholder := canvas.NewImageFromResource(theme.AccountIcon())
 		placeholder.FillMode = canvas.ImageFillContain
-		placeholder.SetMinSize(fyne.NewSize(90, 90))
+		placeholder.SetMinSize(fyne.NewSize(182, 182))
 		portraitBox = container.NewStack(portraitBg, container.NewCenter(placeholder))
 	}
 
@@ -135,7 +140,7 @@ func buildCharacterCard(ctx *Context, level int, rank string, stats []models.Sta
 
 	// Layout: portrait fixed left, stats fill right
 	row := container.NewBorder(nil, nil, leftCol, nil, rightColPadded)
-	return makeTopCard(row, fyne.NewSize(0, 360))
+	return makeTopCard(row, fyne.NewSize(0, 388))
 }
 
 // =============================================================================
@@ -742,6 +747,144 @@ func resolveAvatarPath() string {
 		}
 	}
 	return ""
+}
+
+func loadTrimmedAvatar(path string) image.Image {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer file.Close()
+
+	src, err := png.Decode(file)
+	if err != nil {
+		return nil
+	}
+	return trimTransparentBounds(src)
+}
+
+func trimTransparentBounds(src image.Image) image.Image {
+	bounds := src.Bounds()
+	minX, minY := bounds.Max.X, bounds.Max.Y
+	maxX, maxY := bounds.Min.X, bounds.Min.Y
+	found := false
+
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			_, _, _, a := src.At(x, y).RGBA()
+			if a > 0 {
+				found = true
+				if x < minX {
+					minX = x
+				}
+				if y < minY {
+					minY = y
+				}
+				if x > maxX {
+					maxX = x
+				}
+				if y > maxY {
+					maxY = y
+				}
+			}
+		}
+	}
+
+	if !found {
+		return src
+	}
+
+	const pad = 8
+	if minX > bounds.Min.X+pad {
+		minX -= pad
+	} else {
+		minX = bounds.Min.X
+	}
+	if minY > bounds.Min.Y+pad {
+		minY -= pad
+	} else {
+		minY = bounds.Min.Y
+	}
+	if maxX+pad < bounds.Max.X-1 {
+		maxX += pad
+	} else {
+		maxX = bounds.Max.X - 1
+	}
+	if maxY+pad < bounds.Max.Y-1 {
+		maxY += pad
+	} else {
+		maxY = bounds.Max.Y - 1
+	}
+
+	trimmedRect := image.Rect(minX, minY, maxX+1, maxY+1)
+	if !trimmedRect.Eq(bounds) {
+		sub, ok := src.(interface {
+			SubImage(r image.Rectangle) image.Image
+		})
+		if !ok {
+			return src
+		}
+		src = sub.SubImage(trimmedRect)
+		bounds = src.Bounds()
+	}
+
+	zoomedRect := zoomRect(bounds, 20)
+	if zoomedRect.Eq(bounds) {
+		return src
+	}
+	sub, ok := src.(interface {
+		SubImage(r image.Rectangle) image.Image
+	})
+	if !ok {
+		return src
+	}
+	return sub.SubImage(zoomedRect)
+}
+
+// zoomRect shrinks rect by percent to make subject appear larger after fit.
+func zoomRect(r image.Rectangle, percent int) image.Rectangle {
+	if percent <= 0 || r.Dx() < 2 || r.Dy() < 2 {
+		return r
+	}
+
+	scale := 100 + percent
+	newW := r.Dx() * 100 / scale
+	newH := r.Dy() * 100 / scale
+	if newW < 1 {
+		newW = 1
+	}
+	if newH < 1 {
+		newH = 1
+	}
+
+	cx := r.Min.X + r.Dx()/2
+	cy := r.Min.Y + r.Dy()/2
+	minX := cx - newW/2
+	minY := cy - newH/2
+	maxX := minX + newW
+	maxY := minY + newH
+
+	if minX < r.Min.X {
+		minX = r.Min.X
+		maxX = minX + newW
+	}
+	if minY < r.Min.Y {
+		minY = r.Min.Y
+		maxY = minY + newH
+	}
+	if maxX > r.Max.X {
+		maxX = r.Max.X
+		minX = maxX - newW
+	}
+	if maxY > r.Max.Y {
+		maxY = r.Max.Y
+		minY = maxY - newH
+	}
+
+	if minX < r.Min.X || minY < r.Min.Y || maxX > r.Max.X || maxY > r.Max.Y {
+		return r
+	}
+	return image.Rect(minX, minY, maxX, maxY)
 }
 
 func classifyTodayQuest(q models.Quest) string {
