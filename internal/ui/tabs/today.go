@@ -23,12 +23,10 @@ import (
 )
 
 func BuildToday(ctx *Context) fyne.CanvasObject {
-	ctx.CharacterPanel = container.NewVBox()
+	// Use Stack (not VBox!) so the single child Border layout stretches to fill all space.
+	ctx.CharacterPanel = container.NewStack()
 	RefreshToday(ctx)
-
-	// The CharacterPanel is rebuilt each refresh as a Border layout.
-	// Wrap in a stack so the CharacterPanel reference stays stable.
-	return container.NewStack(ctx.CharacterPanel)
+	return ctx.CharacterPanel
 }
 
 func RefreshToday(ctx *Context) {
@@ -39,7 +37,10 @@ func RefreshToday(ctx *Context) {
 
 	stats, err := ctx.Engine.GetStatLevels()
 	if err != nil {
-		ctx.CharacterPanel.Add(components.MakeLabel("Ошибка загрузки: "+err.Error(), components.ColorRed))
+		ctx.CharacterPanel.Objects = []fyne.CanvasObject{
+			components.MakeLabel("Ошибка загрузки: "+err.Error(), components.ColorRed),
+		}
+		ctx.CharacterPanel.Refresh()
 		return
 	}
 
@@ -73,7 +74,7 @@ func RefreshToday(ctx *Context) {
 		container.NewPadded(questsBlock), // center — stretches
 	)
 
-	ctx.CharacterPanel.Add(root)
+	ctx.CharacterPanel.Objects = []fyne.CanvasObject{root}
 	ctx.CharacterPanel.Refresh()
 }
 
