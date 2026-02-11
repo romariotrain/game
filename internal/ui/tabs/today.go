@@ -44,11 +44,17 @@ func RefreshToday(ctx *Context) {
 	rankTitle := game.HunterRank(overallLevel)
 
 	charCard := buildCharacterCard(ctx, overallLevel, rankTitle, stats)
-	rightTopCard := buildDailyProgressCard(ctx)
+	todayTile, attemptsTile, enemyTile := buildDailyProgressTiles(ctx)
+	rightTopCard := buildDailyProgressCard(todayTile, attemptsTile, enemyTile)
+
+	leftMin := canvas.NewRectangle(color.Transparent)
+	leftMin.SetMinSize(fyne.NewSize(320, 250))
+	leftPane := container.NewStack(leftMin, charCard)
+
 	rightMin := canvas.NewRectangle(color.Transparent)
 	rightMin.SetMinSize(fyne.NewSize(320, 250))
 	rightPane := container.NewStack(rightMin, rightTopCard)
-	topRow := container.NewGridWithColumns(2, charCard, rightPane)
+	topRow := container.NewGridWithColumns(2, leftPane, rightPane)
 	ctx.CharacterPanel.Add(topRow)
 
 	// Streak + Attempts in one row
@@ -108,9 +114,8 @@ func buildCharacterCard(ctx *Context, level int, rank string, stats []models.Sta
 
 	avatarPane := buildHunterAvatarPane()
 	rightPane := container.NewVBox(rightItems...)
-	gap := canvas.NewRectangle(color.Transparent)
-	gap.SetMinSize(fyne.NewSize(10, 0))
-	row := container.NewHBox(avatarPane, gap, rightPane, layout.NewSpacer())
+	rightPaneWithInset := container.New(layout.NewCustomPaddedLayout(0, 0, 10, 0), rightPane)
+	row := container.NewBorder(nil, nil, avatarPane, nil, rightPaneWithInset)
 	return makeTopCard(row, fyne.NewSize(0, 250))
 }
 
@@ -136,7 +141,7 @@ func buildHunterAvatarPane() fyne.CanvasObject {
 	return container.NewStack(bg, container.NewCenter(placeholder))
 }
 
-func buildDailyProgressCard(ctx *Context) *fyne.Container {
+func buildDailyProgressTiles(ctx *Context) (fyne.CanvasObject, fyne.CanvasObject, fyne.CanvasObject) {
 	enemyName := "Неизвестный враг"
 	enemyRankText := "?"
 	if ctx.Features.Combat {
@@ -240,10 +245,13 @@ func buildDailyProgressCard(ctx *Context) *fyne.Container {
 		fyne.NewSize(0, 138),
 	)
 
+	return todayTile, attemptsTile, enemyTile
+}
+
+func buildDailyProgressCard(todayTile, attemptsTile, enemyTile fyne.CanvasObject) *fyne.Container {
 	topMetrics := container.NewGridWithColumns(2, todayTile, attemptsTile)
-	gap := canvas.NewRectangle(color.Transparent)
-	gap.SetMinSize(fyne.NewSize(0, 8))
-	return container.NewVBox(topMetrics, gap, enemyTile)
+	bottomRow := container.NewGridWithColumns(1, enemyTile)
+	return container.NewGridWithRows(2, topMetrics, bottomRow)
 }
 
 func buildCompactStatBlock(stats []models.StatLevel) fyne.CanvasObject {
