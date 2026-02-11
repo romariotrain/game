@@ -16,4 +16,6 @@ var (
 	ColorGreen        = color.NRGBA{R: 50, G: 200, B: 80, A: 255}
 	ColorBlue         = color.NRGBA{R: 70, G: 130, B: 220, A: 255}
 	ColorPurple       = color.NRGBA{R: 155, G: 89, B: 182, A: 255}
+	ColorYellow       = color.NRGBA{R: 240, G: 200, B: 40, A: 255}
+	ColorOrange       = color.NRGBA{R: 230, G: 126, B: 34, A: 255}
 )

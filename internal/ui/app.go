@@ -97,7 +97,7 @@ func (a *App) buildMainLayout() fyne.CanvasObject {
 		todayTab := container.NewTabItem("Сегодня", tabs.BuildToday(a.tabsCtx))
 		questsTab := container.NewTabItem("Задания", tabs.BuildQuests(a.tabsCtx))
 		progressTab := container.NewTabItem("Прогресс", tabs.BuildProgress(a.tabsCtx))
-		achievementsTab := container.NewTabItem("Achievements", tabs.BuildAchievements(a.tabsCtx))
+		achievementsTab := container.NewTabItem("Достижения", tabs.BuildAchievements(a.tabsCtx))
 		dungeonsTab := container.NewTabItem("Данжи", tabs.BuildDungeons(a.tabsCtx))
 		tabItems := []*container.TabItem{todayTab, questsTab, progressTab, achievementsTab, dungeonsTab}
 		if a.features.Combat {
@@ -109,7 +109,7 @@ func (a *App) buildMainLayout() fyne.CanvasObject {
 		questsTab := container.NewTabItem("Задания", tabs.BuildQuests(a.tabsCtx))
 		dungeonsTab := container.NewTabItem("Данжи", tabs.BuildDungeons(a.tabsCtx))
 		statsTab := container.NewTabItem("Статистика", tabs.BuildProgress(a.tabsCtx))
-		achievementsTab := container.NewTabItem("Achievements", tabs.BuildAchievements(a.tabsCtx))
+		achievementsTab := container.NewTabItem("Достижения", tabs.BuildAchievements(a.tabsCtx))
 
 		tabItems := []*container.TabItem{charTab, questsTab, dungeonsTab, statsTab, achievementsTab}
 		if a.features.Combat {

@@ -109,16 +109,16 @@ func HunterRank(level int) string {
 func HunterRankColor(level int) string {
 	switch {
 	case level >= 40:
-		return "#e74c3c"
+		return "#9b59b6" // S = purple
 	case level >= 30:
-		return "#e67e22"
+		return "#dc3232" // A = red
 	case level >= 20:
-		return "#9b59b6"
+		return "#f0c828" // B = yellow
 	case level >= 14:
-		return "#4a7fbf"
+		return "#32c850" // C = green
 	case level >= 8:
-		return "#4a9e4a"
+		return "#4682dc" // D = blue
 	default:
-		return "#8a8a8a"
+		return "#8a8a8a" // E = grey
 	}
 }
