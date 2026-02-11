@@ -83,76 +83,59 @@ func RefreshToday(ctx *Context) {
 // =============================================================================
 
 func buildCharacterCard(ctx *Context, level int, rank string, stats []models.StatLevel) *fyne.Container {
-	nameText := components.MakeTitle(ctx.Engine.Character.Name, components.ColorGold, 24)
-	editBtn := widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), func() {
-		entry := widget.NewEntry()
-		entry.SetText(ctx.Engine.Character.Name)
-		dialog.ShowForm("Имя Охотника", "Сохранить", "Отмена",
-			[]*widget.FormItem{widget.NewFormItem("Имя", entry)},
-			func(ok bool) {
-				if ok && strings.TrimSpace(entry.Text) != "" {
-					ctx.Engine.RenameCharacter(strings.TrimSpace(entry.Text))
-					RefreshToday(ctx)
-				}
-			}, ctx.Window)
-	})
+	// --- Portrait (large) ---
+	const portraitW float32 = 210
+	const portraitH float32 = 260
+	portraitBg := canvas.NewRectangle(color.NRGBA{R: 18, G: 18, B: 32, A: 255})
+	portraitBg.CornerRadius = 10
+	portraitBg.SetMinSize(fyne.NewSize(portraitW, portraitH))
 
-	nameRow := container.NewHBox(nameText, layout.NewSpacer(), editBtn)
+	var portraitBox fyne.CanvasObject
+	if avatarPath := resolveAvatarPath(); avatarPath != "" {
+		avatar := canvas.NewImageFromFile(avatarPath)
+		avatar.FillMode = canvas.ImageFillContain
+		avatar.SetMinSize(fyne.NewSize(portraitW, portraitH))
+		portraitBox = container.NewStack(portraitBg, avatar)
+	} else {
+		placeholder := canvas.NewImageFromResource(theme.AccountIcon())
+		placeholder.FillMode = canvas.ImageFillContain
+		placeholder.SetMinSize(fyne.NewSize(90, 90))
+		portraitBox = container.NewStack(portraitBg, container.NewCenter(placeholder))
+	}
 
+	// Rank + level + EXP under portrait
 	rankColor := components.ParseHexColor(game.HunterRankColor(level))
-	rankText := canvas.NewText(rank, rankColor)
-	rankText.TextSize = 16
-	rankText.TextStyle = fyne.TextStyle{Bold: true}
+	rankLabel := canvas.NewText(rank, rankColor)
+	rankLabel.TextSize = 14
+	rankLabel.TextStyle = fyne.TextStyle{Bold: true}
 
-	levelText := components.MakeLabel(fmt.Sprintf("Lv.%d", level), components.ColorTextDim)
-	levelText.TextSize = 12
+	levelLabel := canvas.NewText(fmt.Sprintf("Lv.%d", level), components.ColorTextDim)
+	levelLabel.TextSize = 12
+
 	totalEXP := 0
 	for _, stat := range stats {
 		totalEXP += stat.TotalEXP
 	}
-	expText := components.MakeLabel(fmt.Sprintf("EXP %d", totalEXP), components.ColorTextDim)
-	expText.TextSize = 12
+	expLabel := canvas.NewText(fmt.Sprintf("EXP %d", totalEXP), components.ColorTextDim)
+	expLabel.TextSize = 11
 
-	metaGap := canvas.NewRectangle(color.Transparent)
-	metaGap.SetMinSize(fyne.NewSize(10, 0))
-	metaRow := container.NewHBox(rankText, metaGap, levelText, metaGap, expText)
+	metaRow := container.NewHBox(layout.NewSpacer(), rankLabel, levelLabel, expLabel, layout.NewSpacer())
 
+	// Left column: portrait + meta
+	leftCol := container.NewVBox(portraitBox, metaRow)
+
+	// --- Right column: stats (stretch to fill) ---
 	statsBlock := buildStatBlockWithBars(stats)
-
-	rightItems := []fyne.CanvasObject{
-		nameRow,
-		metaRow,
+	rightCol := container.NewVBox(
+		components.MakeTitle("Характеристики", components.ColorAccentBright, 14),
 		widget.NewSeparator(),
 		statsBlock,
-	}
+	)
+	rightColPadded := container.New(layout.NewCustomPaddedLayout(0, 0, 10, 0), rightCol)
 
-	avatarPane := buildHunterAvatarPane()
-	rightPane := container.NewVBox(rightItems...)
-	rightPaneWithInset := container.New(layout.NewCustomPaddedLayout(0, 0, 10, 0), rightPane)
-	row := container.NewBorder(nil, nil, avatarPane, nil, rightPaneWithInset)
-	return makeTopCard(row, fyne.NewSize(0, 320))
-}
-
-func buildHunterAvatarPane() fyne.CanvasObject {
-	const avatarWidth float32 = 150
-	const avatarHeight float32 = 190
-
-	bg := canvas.NewRectangle(color.NRGBA{R: 24, G: 28, B: 44, A: 255})
-	bg.CornerRadius = 8
-	bg.SetMinSize(fyne.NewSize(avatarWidth, avatarHeight))
-
-	avatarPath := resolveAvatarPath()
-	if avatarPath != "" {
-		avatar := canvas.NewImageFromFile(avatarPath)
-		avatar.FillMode = canvas.ImageFillContain
-		avatar.SetMinSize(fyne.NewSize(avatarWidth, avatarHeight))
-		return container.NewStack(bg, avatar)
-	}
-
-	placeholder := canvas.NewImageFromResource(theme.AccountIcon())
-	placeholder.FillMode = canvas.ImageFillContain
-	placeholder.SetMinSize(fyne.NewSize(92, 92))
-	return container.NewStack(bg, container.NewCenter(placeholder))
+	// Layout: portrait fixed left, stats fill right
+	row := container.NewBorder(nil, nil, leftCol, nil, rightColPadded)
+	return makeTopCard(row, fyne.NewSize(0, 360))
 }
 
 // =============================================================================
