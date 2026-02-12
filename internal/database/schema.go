@@ -214,6 +214,7 @@ func (db *DB) migrate() error {
 		"ALTER TABLE daily_quest_templates ADD COLUMN congratulations TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE daily_quest_templates ADD COLUMN exp INTEGER NOT NULL DEFAULT 20",
 		"ALTER TABLE dungeon_quests ADD COLUMN exp INTEGER NOT NULL DEFAULT 20",
+		"ALTER TABLE character ADD COLUMN active_title TEXT NOT NULL DEFAULT ''",
 		`UPDATE quests SET exp = CASE UPPER(rank)
 			WHEN 'S' THEN 350
 			WHEN 'A' THEN 200

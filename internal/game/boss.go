@@ -39,12 +39,7 @@ func (e *Engine) StartBossBattle(enemyID int64) (*boss.State, error) {
 		STA: statMap[models.StatEndurance],
 	}
 
-	endurance := statMap[models.StatEndurance]
-	if endurance == 0 {
-		endurance = 1
-	}
-	baseHP := 100 + endurance*10
-	playerHP := baseHP
+	playerHP := memory.PlayerHP(memStats.STA)
 
 	return boss.NewState(*enemy, memStats, playerHP)
 }
@@ -68,10 +63,6 @@ func (e *Engine) ProcessBossMemory(state *boss.State, guesses []int) error {
 	}
 
 	return boss.ApplyMemoryInput(state, guesses, memStats, 0)
-}
-
-func (e *Engine) ProcessBossPuzzleInput(state *boss.State, value int) error {
-	return boss.ApplyPuzzleInput(state, value)
 }
 
 func (e *Engine) FailBoss(state *boss.State) (*models.BattleRecord, error) {

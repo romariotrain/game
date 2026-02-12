@@ -14,7 +14,8 @@ import (
 
 func (db *DB) GetOrCreateCharacter(name string) (*models.Character, error) {
 	var char models.Character
-	err := db.conn.QueryRow("SELECT id, name, attempts FROM character LIMIT 1").Scan(&char.ID, &char.Name, &char.Attempts)
+	var activeTitle sql.NullString
+	err := db.conn.QueryRow("SELECT id, name, attempts, COALESCE(active_title,'') FROM character LIMIT 1").Scan(&char.ID, &char.Name, &char.Attempts, &activeTitle)
 	if err == sql.ErrNoRows {
 		res, err := db.conn.Exec("INSERT INTO character (name, attempts) VALUES (?, 0)", name)
 		if err != nil {
@@ -37,6 +38,9 @@ func (db *DB) GetOrCreateCharacter(name string) (*models.Character, error) {
 	}
 	if err != nil {
 		return nil, err
+	}
+	if activeTitle.Valid {
+		char.ActiveTitle = activeTitle.String
 	}
 	return &char, nil
 }
@@ -104,6 +108,66 @@ func (db *DB) GetStreakTitles(charID int64) ([]string, error) {
 func (db *DB) UpdateCharacterName(id int64, name string) error {
 	_, err := db.conn.Exec("UPDATE character SET name = ? WHERE id = ?", name, id)
 	return err
+}
+
+func (db *DB) SetActiveTitle(charID int64, title string) error {
+	_, err := db.conn.Exec("UPDATE character SET active_title = ? WHERE id = ?", title, charID)
+	return err
+}
+
+// GetAllTitles collects every title the character has earned (battle rewards, streak titles, dungeon titles).
+func (db *DB) GetAllTitles(charID int64) ([]string, error) {
+	var titles []string
+
+	// Battle reward titles
+	rows, err := db.conn.Query("SELECT title FROM battle_rewards WHERE char_id = ? ORDER BY awarded_at", charID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		if t != "" {
+			titles = append(titles, t)
+		}
+	}
+
+	// Streak titles
+	rows2, err := db.conn.Query("SELECT title FROM streak_titles WHERE char_id = ? ORDER BY streak_days", charID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows2.Close()
+	for rows2.Next() {
+		var t string
+		if err := rows2.Scan(&t); err != nil {
+			return nil, err
+		}
+		if t != "" {
+			titles = append(titles, t)
+		}
+	}
+
+	// Dungeon completion titles
+	rows3, err := db.conn.Query("SELECT earned_title FROM completed_dungeons WHERE char_id = ? ORDER BY completed_at", charID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows3.Close()
+	for rows3.Next() {
+		var t string
+		if err := rows3.Scan(&t); err != nil {
+			return nil, err
+		}
+		if t != "" {
+			titles = append(titles, t)
+		}
+	}
+
+	return titles, nil
 }
 
 // ============================================================

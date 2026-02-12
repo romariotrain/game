@@ -126,8 +126,27 @@ func buildCharacterCard(ctx *Context, level int, rank string, stats []models.Sta
 
 	metaRow := container.NewHBox(layout.NewSpacer(), rankLabel, levelLabel, expLabel, layout.NewSpacer())
 
-	// Left column: portrait + meta
-	leftCol := container.NewVBox(portraitBox, metaRow)
+	// Active title selector
+	var titleRow fyne.CanvasObject
+	allTitles, _ := ctx.Engine.GetAllTitles()
+	if len(allTitles) > 0 {
+		sel := widget.NewSelect(allTitles, func(chosen string) {
+			_ = ctx.Engine.SetActiveTitle(chosen)
+		})
+		sel.PlaceHolder = "Нет титула"
+		if ctx.Engine.Character.ActiveTitle != "" {
+			sel.SetSelected(ctx.Engine.Character.ActiveTitle)
+		}
+		titleRow = sel
+	} else {
+		placeholder := canvas.NewText("Нет титулов", components.ColorTextDim)
+		placeholder.TextSize = 11
+		placeholder.Alignment = fyne.TextAlignCenter
+		titleRow = container.NewHBox(layout.NewSpacer(), placeholder, layout.NewSpacer())
+	}
+
+	// Left column: portrait + meta + title
+	leftCol := container.NewVBox(portraitBox, metaRow, titleRow)
 
 	// --- Right column: stats (stretch to fill) ---
 	statsBlock := buildStatBlockWithBars(stats)
@@ -285,7 +304,7 @@ func buildEnemyDayCard(ctx *Context) *fyne.Container {
 	var enemy *models.Enemy
 
 	if ctx.Features.Combat {
-		e, err := ctx.Engine.GetCurrentEnemy()
+		e, err := ctx.Engine.GetNextEnemyForPlayer()
 		if err == nil && e != nil {
 			enemy = e
 			enemyName = e.Name
@@ -312,7 +331,7 @@ func buildEnemyDayCard(ctx *Context) *fyne.Container {
 	attempts := ctx.Engine.GetAttempts()
 
 	// Enemy title
-	enemyTitle := components.MakeTitle("Враг дня", components.ColorAccentBright, 16)
+	enemyTitle := components.MakeTitle("Следующий враг", components.ColorAccentBright, 16)
 
 	// Enemy image — 200x200
 	const enemyImgSize float32 = 200
@@ -350,7 +369,7 @@ func buildEnemyDayCard(ctx *Context) *fyne.Container {
 	}
 	if enemy != nil {
 		statsLabel := components.MakeLabel(
-			fmt.Sprintf("ATK %d  Ранг %s", enemyAtk, enemyRankText),
+			fmt.Sprintf("HP %d  ATK %d  Ранг %s", enemy.HP, enemyAtk, enemyRankText),
 			components.ColorTextDim,
 		)
 		statsLabel.TextSize = 12
@@ -378,12 +397,16 @@ func buildEnemyDayCard(ctx *Context) *fyne.Container {
 	// Requirements / fight button
 	activeTotal := len(quests)
 	minQuestsForFight := 1
-	canFight := ctx.Features.Combat && attempts > 0
+	canFight := ctx.Features.Combat && attempts > 0 && enemy != nil
 
 	var ctaSection fyne.CanvasObject
 	if !ctx.Features.Combat {
 		hint := components.MakeLabel("Бой отключён", components.ColorTextDim)
 		hint.TextSize = 12
+		ctaSection = hint
+	} else if enemy == nil {
+		hint := components.MakeLabel("Все враги побеждены", components.ColorGold)
+		hint.TextSize = 13
 		ctaSection = hint
 	} else if attempts <= 0 {
 		hint := components.MakeLabel("Нет попыток — выполни квест", components.ColorRed)
@@ -398,7 +421,11 @@ func buildEnemyDayCard(ctx *Context) *fyne.Container {
 		ctaSection = hint
 	} else {
 		ctaBtn := widget.NewButtonWithIcon("⚔ Вступить в бой", theme.MediaPlayIcon(), func() {
-			dialog.ShowInformation("Бой", "Открой вкладку Tower для запуска боя.", ctx.Window)
+			if ctx.StartBattle != nil && enemy != nil {
+				ctx.StartBattle(*enemy)
+				return
+			}
+			dialog.ShowInformation("Бой", "Не удалось запустить бой.", ctx.Window)
 		})
 		ctaBtn.Importance = widget.HighImportance
 		if !canFight {
@@ -464,7 +491,7 @@ func buildDifficultySection(ctx *Context, enemy *models.Enemy) fyne.CanvasObject
 	return container.NewVBox(headerRow, bar)
 }
 
-// buildFirstWinReward shows the title reward for first victory, or ✓ if already defeated.
+// buildFirstWinReward shows first-win rewards, or ✓ if already defeated.
 func buildFirstWinReward(ctx *Context, enemy *models.Enemy) fyne.CanvasObject {
 	reward, err := ctx.Engine.DB.GetBattleReward(ctx.Engine.Character.ID, enemy.ID)
 	if err == nil && reward != nil {
@@ -475,8 +502,9 @@ func buildFirstWinReward(ctx *Context, enemy *models.Enemy) fyne.CanvasObject {
 		return container.NewHBox(defeated)
 	}
 
-	// Not yet defeated — show expected reward
+	// Not yet defeated — show expected rewards
 	title := fmt.Sprintf("Покоритель: %s", enemy.Name)
+	badge := fmt.Sprintf("Знак: %s", enemy.Name)
 	icon := canvas.NewText("🏆", components.ColorGold)
 	icon.TextSize = 12
 	label := components.MakeLabel("Первая победа:", components.ColorTextDim)
@@ -484,10 +512,16 @@ func buildFirstWinReward(ctx *Context, enemy *models.Enemy) fyne.CanvasObject {
 	titleLabel := canvas.NewText(title, components.ColorGold)
 	titleLabel.TextSize = 11
 	titleLabel.TextStyle = fyne.TextStyle{Bold: true}
+	badgeLabel := components.MakeLabel(badge, components.ColorGold)
+	badgeLabel.TextSize = 11
+	unlockLabel := components.MakeLabel("Открывает следующего врага", components.ColorAccentBright)
+	unlockLabel.TextSize = 11
 
 	return container.NewVBox(
 		container.NewHBox(icon, label),
 		titleLabel,
+		badgeLabel,
+		unlockLabel,
 	)
 }
 

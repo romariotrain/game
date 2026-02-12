@@ -24,7 +24,7 @@ func defaultAchievements() []models.Achievement {
 		{
 			Key:         AchievementFirstBattle,
 			Title:       "Первая победа",
-			Description: "Первый победный бой в башне.",
+			Description: "Первый победный бой с врагом.",
 			Category:    "combat",
 		},
 		{

@@ -5,6 +5,7 @@ import (
 
 	"solo-leveling/internal/config"
 	"solo-leveling/internal/game"
+	"solo-leveling/internal/models"
 )
 
 // Context provides shared state and services for tab builders.
@@ -27,4 +28,5 @@ type Context struct {
 	RefreshDungeons     func()
 	RefreshAchievements func()
 	RefreshHistory      func()
+	StartBattle         func(enemy models.Enemy)
 }

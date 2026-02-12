@@ -149,9 +149,10 @@ const (
 )
 
 type Character struct {
-	ID       int64
-	Name     string
-	Attempts int
+	ID          int64
+	Name        string
+	Attempts    int
+	ActiveTitle string
 }
 
 type Achievement struct {
@@ -454,11 +455,10 @@ type BattleState struct {
 	EnemyMaxHP    int
 	Round         int
 	GridSize      int
-	PatternLength int
+	CellsToShow   int
 	ShowTimeMs    int
-	AllowedErrors int
-	Pattern       []int // ordered sequence of cell indices
-	PlayerGuesses []int // player's chosen cells
+	ShownCells    []int // highlighted cells for current round
+	PlayerChoices []int // player's chosen cells
 	TotalHits     int
 	TotalMisses   int
 	TotalCrits    int
@@ -467,6 +467,15 @@ type BattleState struct {
 	DamageTaken   int
 	BattleOver    bool
 	Result        BattleResult
+
+	// Per-round info for battle log / UI feedback
+	LastRoundDamage   int
+	LastRoundEnemyDmg int
+	LastRoundHits     int
+	LastRoundTotal    int
+	LastRoundAccuracy float64
+	LastRoundCrit     bool
+	RoundLog          []string // last N log lines
 }
 
 // --- Extended Statistics ---

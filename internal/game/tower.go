@@ -6,9 +6,9 @@ import (
 	"solo-leveling/internal/models"
 )
 
-// GetCurrentEnemy returns the first enemy in sequence that is not yet cleared.
+// GetNextEnemyForPlayer returns the first enemy in sequence that is not yet cleared.
 // If all enemies are cleared, it returns nil, nil.
-func (e *Engine) GetCurrentEnemy() (*models.Enemy, error) {
+func (e *Engine) GetNextEnemyForPlayer() (*models.Enemy, error) {
 	allEnemies, err := e.DB.GetAllEnemies()
 	if err != nil {
 		return nil, err
@@ -34,10 +34,15 @@ func (e *Engine) GetCurrentEnemy() (*models.Enemy, error) {
 	return nil, nil
 }
 
-// CanFightCurrentEnemy checks if the provided enemy is the current tower target
+// GetCurrentEnemy keeps backward compatibility with existing callers/tests.
+func (e *Engine) GetCurrentEnemy() (*models.Enemy, error) {
+	return e.GetNextEnemyForPlayer()
+}
+
+// CanFightCurrentEnemy checks if the provided enemy is the current target
 // and the player has at least one battle attempt.
 func (e *Engine) CanFightCurrentEnemy(enemyID int64) (bool, error) {
-	current, err := e.GetCurrentEnemy()
+	current, err := e.GetNextEnemyForPlayer()
 	if err != nil {
 		return false, err
 	}
@@ -48,15 +53,15 @@ func (e *Engine) CanFightCurrentEnemy(enemyID int64) (bool, error) {
 }
 
 func (e *Engine) validateCurrentEnemyForFight(enemyID int64) (*models.Enemy, error) {
-	current, err := e.GetCurrentEnemy()
+	current, err := e.GetNextEnemyForPlayer()
 	if err != nil {
 		return nil, err
 	}
 	if current == nil {
-		return nil, fmt.Errorf("башня полностью пройдена")
+		return nil, fmt.Errorf("все враги уже побеждены")
 	}
 	if current.ID != enemyID {
-		return nil, fmt.Errorf("доступен только текущий враг башни")
+		return nil, fmt.Errorf("доступен только текущий враг")
 	}
 	return current, nil
 }

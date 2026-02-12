@@ -89,6 +89,15 @@ func (e *Engine) RenameCharacter(name string) error {
 	return e.DB.UpdateCharacterName(e.Character.ID, name)
 }
 
+func (e *Engine) GetAllTitles() ([]string, error) {
+	return e.DB.GetAllTitles(e.Character.ID)
+}
+
+func (e *Engine) SetActiveTitle(title string) error {
+	e.Character.ActiveTitle = title
+	return e.DB.SetActiveTitle(e.Character.ID, title)
+}
+
 func HunterRank(level int) string {
 	switch {
 	case level >= 40:

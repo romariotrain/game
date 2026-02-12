@@ -2,6 +2,7 @@ package boss
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"math/rand"
 	"time"
@@ -13,28 +14,16 @@ import (
 type Phase string
 
 const (
-	PhaseMemory   Phase = "memory"
-	PhasePressure Phase = "pressure"
-	PhaseWin      Phase = "win"
-	PhaseLose     Phase = "lose"
+	PhaseMemory Phase = "memory"
+	PhaseWin    Phase = "win"
+	PhaseLose   Phase = "lose"
 )
 
 type MemoryRound struct {
-	GridSize      int
-	PatternLength int
-	ShowTimeMs    int
-	AllowedErrors int
-	Pattern       []int
-}
-
-type PressurePuzzle struct {
-	Steps         int
-	TimeLimitMs   int
-	AllowedErrors int
-	AttemptsLeft  int
-	NextExpected  int
-	Errors        int
-	StartedAt     time.Time
+	GridSize    int
+	CellsToShow int
+	ShowTimeMs  int
+	ShownCells  []int
 }
 
 type State struct {
@@ -46,20 +35,30 @@ type State struct {
 	EnemyHP     int
 	EnemyMaxHP  int
 	Memory      MemoryRound
-	Puzzle      PressurePuzzle
 
 	DamageDealt int
 	DamageTaken int
 	TotalHits   int
 	TotalMisses int
+	TotalCrits  int
+
+	// Per-round info for UI
+	LastRoundDamage   int
+	LastRoundEnemyDmg int
+	LastRoundHits     int
+	LastRoundTotal    int
+	LastRoundAccuracy float64
+	LastRoundCrit     bool
+	RoundLog          []string
 }
 
 func NewState(enemy models.Enemy, stats memory.Stats, playerHP int) (*State, error) {
-	memDiff := memory.DifficultyFor(enemy.Rank, stats)
-	memDiff = tougher(memDiff)
+	gridSize := memory.GridSize(enemy)
+	cellsToShow := memory.CellsToShow(enemy, stats)
+	showTimeMs := memory.TimeToShow(stats)
 
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-	pattern, err := memory.GeneratePattern(memDiff.GridSize, memDiff.PatternLength, rng)
+	shown, err := memory.GenerateShownCells(gridSize, cellsToShow, rng)
 	if err != nil {
 		return nil, err
 	}
@@ -73,76 +72,65 @@ func NewState(enemy models.Enemy, stats memory.Stats, playerHP int) (*State, err
 		EnemyHP:     enemy.HP,
 		EnemyMaxHP:  enemy.HP,
 		Memory: MemoryRound{
-			GridSize:      memDiff.GridSize,
-			PatternLength: memDiff.PatternLength,
-			ShowTimeMs:    memDiff.ShowTimeMs,
-			AllowedErrors: memDiff.AllowedErrors,
-			Pattern:       pattern,
+			GridSize:    gridSize,
+			CellsToShow: cellsToShow,
+			ShowTimeMs:  showTimeMs,
+			ShownCells:  shown,
 		},
 	}
 	return st, nil
 }
 
-func tougher(d memory.Difficulty) memory.Difficulty {
-	// Boss phase 1 is tougher than regular Tactical Memory
-	return memory.Difficulty{
-		GridSize:      clamp(d.GridSize+1, 3, 6),
-		PatternLength: clamp(d.PatternLength+1, 4, 9),
-		ShowTimeMs:    clamp(d.ShowTimeMs-200, 700, 3500),
-		AllowedErrors: clamp(d.AllowedErrors-1, 0, 3),
-	}
-}
-
-func ApplyMemoryInput(state *State, guesses []int, stats memory.Stats, bonusAttack int) error {
+func ApplyMemoryInput(state *State, choices []int, stats memory.Stats, bonusAttack int) error {
 	if state.Phase != PhaseMemory {
 		return errors.New("not in memory phase")
 	}
 
-	total := len(state.Memory.Pattern)
-	hits := 0
-	for i := 0; i < total; i++ {
-		if i < len(guesses) && guesses[i] == state.Memory.Pattern[i] {
-			hits++
-		}
-	}
-	errors := total - hits
-
-	accuracy := 0.0
-	if total > 0 {
-		accuracy = float64(hits) / float64(total)
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	accuracy := memory.ComputeAccuracy(state.Memory.ShownCells, choices)
+	hits := memory.CorrectClicks(state.Memory.ShownCells, choices)
+	total := state.Memory.CellsToShow
+	misses := total - hits
+	if misses < 0 {
+		misses = 0
 	}
 
-	requiredHits := total - (stats.STR / 5)
-	if requiredHits < 1 {
-		requiredHits = 1
-	}
-
-	baseDamage := 10 + stats.STR*2 + bonusAttack
-	damage := 0
-	if hits >= requiredHits {
-		damage = int(float64(baseDamage) * accuracy)
-	}
-
-	enemyDamage := state.Enemy.Attack
-	enemyDamage -= stats.STA / 5
-	if enemyDamage < 0 {
-		enemyDamage = 0
-	}
-	if errors > state.Memory.AllowedErrors {
-		enemyDamage += (errors - state.Memory.AllowedErrors) * 6
-	}
+	damage, isCrit := memory.ComputePlayerDamage(stats, accuracy, rng)
+	damage += bonusAttack
+	enemyDamage := memory.ComputeEnemyDamage(state.Enemy, stats, accuracy, rng)
 
 	state.EnemyHP -= damage
 	state.PlayerHP -= enemyDamage
 	state.DamageDealt += damage
 	state.DamageTaken += enemyDamage
 	state.TotalHits += hits
-	state.TotalMisses += errors
+	state.TotalMisses += misses
+	if isCrit {
+		state.TotalCrits++
+	}
+
+	state.LastRoundDamage = damage
+	state.LastRoundEnemyDmg = enemyDamage
+	state.LastRoundHits = hits
+	state.LastRoundTotal = total
+	state.LastRoundAccuracy = accuracy
+	state.LastRoundCrit = isCrit
+
+	logLine := fmt.Sprintf("Раунд %d: %.0f%% (%d/%d) → %d урона", state.Round, accuracy*100, hits, total, damage)
+	state.RoundLog = append(state.RoundLog, logLine)
+	if isCrit {
+		state.RoundLog = append(state.RoundLog, "⚡ Крит! x1.5")
+	}
+	if enemyDamage > 0 {
+		state.RoundLog = append(state.RoundLog, fmt.Sprintf("Враг атакует: -%d HP", enemyDamage))
+	}
+	if len(state.RoundLog) > 6 {
+		state.RoundLog = state.RoundLog[len(state.RoundLog)-6:]
+	}
 
 	if state.EnemyHP <= 0 {
 		state.EnemyHP = 0
-		state.Phase = PhasePressure
-		state.Puzzle = NewPressurePuzzle(state.Enemy.Rank, stats)
+		state.Phase = PhaseWin
 		return nil
 	}
 	if state.PlayerHP <= 0 {
@@ -152,132 +140,15 @@ func ApplyMemoryInput(state *State, guesses []int, stats memory.Stats, bonusAtta
 	}
 
 	state.Round++
-	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-	pattern, err := memory.GeneratePattern(state.Memory.GridSize, state.Memory.PatternLength, rng)
+	state.Memory.CellsToShow = memory.CellsToShow(state.Enemy, stats)
+	state.Memory.ShowTimeMs = memory.TimeToShow(stats)
+	shown, err := memory.GenerateShownCells(state.Memory.GridSize, state.Memory.CellsToShow, rng)
 	if err != nil {
 		return err
 	}
-	state.Memory.Pattern = pattern
+	state.Memory.ShownCells = shown
 
 	return nil
-}
-
-func NewPressurePuzzle(rank models.QuestRank, stats memory.Stats) PressurePuzzle {
-	steps := baseSteps(rank)
-	steps -= stats.STR / 5
-	if steps < 3 {
-		steps = 3
-	}
-
-	timeLimit := baseTimeMs(rank) + stats.INT*120
-	if timeLimit < 1200 {
-		timeLimit = 1200
-	}
-	if timeLimit > 8000 {
-		timeLimit = 8000
-	}
-
-	allowedErrors := 0
-	if stats.AGI >= 10 {
-		allowedErrors = 1
-	}
-
-	attempts := 1 + stats.STA/10
-	if attempts > 5 {
-		attempts = 5
-	}
-
-	return PressurePuzzle{
-		Steps:         steps,
-		TimeLimitMs:   timeLimit,
-		AllowedErrors: allowedErrors,
-		AttemptsLeft:  attempts,
-		NextExpected:  1,
-		StartedAt:     time.Now(),
-	}
-}
-
-func ApplyPuzzleInput(state *State, value int) error {
-	if state.Phase != PhasePressure {
-		return errors.New("not in pressure phase")
-	}
-	if state.Puzzle.AttemptsLeft <= 0 {
-		state.Phase = PhaseLose
-		return nil
-	}
-
-	if value == state.Puzzle.NextExpected {
-		state.Puzzle.NextExpected++
-		if state.Puzzle.NextExpected > state.Puzzle.Steps {
-			state.Phase = PhaseWin
-		}
-		return nil
-	}
-
-	state.Puzzle.Errors++
-	if state.Puzzle.Errors > state.Puzzle.AllowedErrors {
-		state.Puzzle.AttemptsLeft--
-		state.Puzzle.Errors = 0
-		state.Puzzle.NextExpected = 1
-		if state.Puzzle.AttemptsLeft <= 0 {
-			state.Phase = PhaseLose
-		}
-	}
-	return nil
-}
-
-func PressureTimedOut(state *State) {
-	if state.Phase == PhasePressure {
-		state.Phase = PhaseLose
-	}
-}
-
-func baseSteps(rank models.QuestRank) int {
-	switch rank {
-	case models.RankE:
-		return 4
-	case models.RankD:
-		return 5
-	case models.RankC:
-		return 6
-	case models.RankB:
-		return 7
-	case models.RankA:
-		return 8
-	case models.RankS:
-		return 9
-	default:
-		return 6
-	}
-}
-
-func baseTimeMs(rank models.QuestRank) int {
-	switch rank {
-	case models.RankE:
-		return 4000
-	case models.RankD:
-		return 3800
-	case models.RankC:
-		return 3400
-	case models.RankB:
-		return 3000
-	case models.RankA:
-		return 2600
-	case models.RankS:
-		return 2300
-	default:
-		return 3200
-	}
-}
-
-func clamp(v, min, max int) int {
-	if v < min {
-		return min
-	}
-	if v > max {
-		return max
-	}
-	return v
 }
 
 func CalcAccuracy(totalHits, totalMisses int) float64 {

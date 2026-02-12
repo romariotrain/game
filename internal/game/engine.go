@@ -175,41 +175,33 @@ func (e *Engine) StartBattle(enemyID int64) (*models.BattleState, error) {
 		INT: statMap[models.StatIntellect],
 		STA: statMap[models.StatEndurance],
 	}
-	memDiff := memory.DifficultyFor(enemy.Rank, memStats)
+	playerHP := memory.PlayerHP(memStats.STA)
+	gridSize := memory.GridSize(*enemy)
+	cellsToShow := memory.CellsToShow(*enemy, memStats)
+	showTimeMs := memory.TimeToShow(memStats)
 
-	// Base player HP from endurance
-	endurance := statMap[models.StatEndurance]
-	if endurance == 0 {
-		endurance = 1
-	}
-	baseHP := 100 + endurance*10
-
-	playerHP := baseHP
-
-	// Generate pattern (Tactical Memory)
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-	pattern, err := memory.GeneratePattern(memDiff.GridSize, memDiff.PatternLength, rng)
+	shown, err := memory.GenerateShownCells(gridSize, cellsToShow, rng)
 	if err != nil {
 		return nil, err
 	}
 
 	return &models.BattleState{
-		Enemy:         *enemy,
-		PlayerHP:      playerHP,
-		PlayerMaxHP:   playerHP,
-		EnemyHP:       enemy.HP,
-		EnemyMaxHP:    enemy.HP,
-		Round:         1,
-		GridSize:      memDiff.GridSize,
-		PatternLength: memDiff.PatternLength,
-		ShowTimeMs:    memDiff.ShowTimeMs,
-		AllowedErrors: memDiff.AllowedErrors,
-		Pattern:       pattern,
+		Enemy:       *enemy,
+		PlayerHP:    playerHP,
+		PlayerMaxHP: playerHP,
+		EnemyHP:     enemy.HP,
+		EnemyMaxHP:  enemy.HP,
+		Round:       1,
+		GridSize:    gridSize,
+		CellsToShow: cellsToShow,
+		ShowTimeMs:  showTimeMs,
+		ShownCells:  shown,
 	}, nil
 }
 
-// ProcessRound evaluates the player's guesses for one round of battle
-func (e *Engine) ProcessRound(state *models.BattleState, guesses []int) error {
+// ProcessRound evaluates one visual-memory round.
+func (e *Engine) ProcessRound(state *models.BattleState, choices []int) error {
 	if state.BattleOver {
 		return fmt.Errorf("battle is already over")
 	}
@@ -224,62 +216,57 @@ func (e *Engine) ProcessRound(state *models.BattleState, guesses []int) error {
 		statMap[s.StatType] = s.Level
 	}
 
-	// Tactical Memory accuracy: ordered sequence comparison
-	total := len(state.Pattern)
-	hits := 0
-	for i := 0; i < total; i++ {
-		if i < len(guesses) && guesses[i] == state.Pattern[i] {
-			hits++
-		}
-	}
-	errors := total - hits
-	accuracy := 0.0
-	if total > 0 {
-		accuracy = float64(hits) / float64(total)
+	str := statMap[models.StatStrength]
+	statsForRound := memory.Stats{
+		STR: str,
+		AGI: statMap[models.StatAgility],
+		INT: statMap[models.StatIntellect],
+		STA: statMap[models.StatEndurance],
 	}
 
-	strength := statMap[models.StatStrength]
-	// STR reduces required correct steps
-	requiredHits := total - (strength / 5)
-	if requiredHits < 1 {
-		requiredHits = 1
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	accuracy := memory.ComputeAccuracy(state.ShownCells, choices)
+	hits := memory.CorrectClicks(state.ShownCells, choices)
+	total := state.CellsToShow
+	misses := total - hits
+	if misses < 0 {
+		misses = 0
 	}
 
-	baseDamage := 8 + strength*2
-
-	damage := 0
-	if hits >= requiredHits {
-		damage = int(float64(baseDamage) * accuracy)
+	damage, isCrit := memory.ComputePlayerDamage(statsForRound, accuracy, rng)
+	enemyDamage := memory.ComputeEnemyDamage(state.Enemy, statsForRound, accuracy, rng)
+	if isCrit {
+		state.TotalCrits++
 	}
-
-	// Enemy attacks
-	enemyDamage := state.Enemy.Attack
-
-	// STA reduces incoming damage slightly
-	endurance := statMap[models.StatEndurance]
-	enemyDamage -= endurance / 5
-	if enemyDamage < 0 {
-		enemyDamage = 0
-	}
-
-	// Penalty for exceeding allowed errors
-	if errors > state.AllowedErrors {
-		enemyDamage += (errors - state.AllowedErrors) * 5
-	}
-
-	crits := 0
-	dodges := 0
 
 	// Apply damage
 	state.EnemyHP -= damage
 	state.PlayerHP -= enemyDamage
 
 	state.TotalHits += hits
-	state.TotalMisses += errors
-	state.TotalCrits += crits
-	state.TotalDodges += dodges
+	state.TotalMisses += misses
 	state.DamageDealt += damage
 	state.DamageTaken += enemyDamage
+
+	// Per-round info for UI
+	state.LastRoundDamage = damage
+	state.LastRoundEnemyDmg = enemyDamage
+	state.LastRoundHits = hits
+	state.LastRoundTotal = total
+	state.LastRoundAccuracy = accuracy
+	state.LastRoundCrit = isCrit
+
+	logLine := fmt.Sprintf("Раунд %d: %.0f%% (%d/%d) → %d урона", state.Round, accuracy*100, hits, total, damage)
+	state.RoundLog = append(state.RoundLog, logLine)
+	if isCrit {
+		state.RoundLog = append(state.RoundLog, "⚡ Крит! x1.5")
+	}
+	if enemyDamage > 0 {
+		state.RoundLog = append(state.RoundLog, fmt.Sprintf("Враг атакует: -%d HP", enemyDamage))
+	}
+	if len(state.RoundLog) > 6 {
+		state.RoundLog = state.RoundLog[len(state.RoundLog)-6:]
+	}
 
 	// Check battle outcome
 	if state.EnemyHP <= 0 {
@@ -291,17 +278,17 @@ func (e *Engine) ProcessRound(state *models.BattleState, guesses []int) error {
 		state.BattleOver = true
 		state.Result = models.BattleLose
 	} else {
-		// New round, new pattern
 		state.Round++
-		rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-		pattern, err := memory.GeneratePattern(state.GridSize, state.PatternLength, rng)
+		state.CellsToShow = memory.CellsToShow(state.Enemy, statsForRound)
+		state.ShowTimeMs = memory.TimeToShow(statsForRound)
+		shown, err := memory.GenerateShownCells(state.GridSize, state.CellsToShow, rng)
 		if err != nil {
 			return err
 		}
-		state.Pattern = pattern
+		state.ShownCells = shown
 	}
 
-	state.PlayerGuesses = guesses
+	state.PlayerChoices = choices
 	return nil
 }
 
