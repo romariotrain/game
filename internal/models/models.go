@@ -377,16 +377,22 @@ const (
 )
 
 type Enemy struct {
-	ID          int64
-	Name        string
-	Description string
-	Rank        QuestRank
-	Type        EnemyType
-	HP          int
-	Attack      int
-	Floor       int
-	Zone        int
-	IsBoss      bool
+	ID               int64
+	Name             string
+	Description      string
+	Rank             QuestRank
+	Type             EnemyType
+	Level            int
+	HP               int
+	Attack           int
+	Floor            int
+	Zone             int
+	IsBoss           bool
+	Biome            string
+	Role             string
+	IsTransition     bool
+	TargetWinRateMin float64
+	TargetWinRateMax float64
 }
 
 // StreakTitle returns the title earned at a given streak milestone, or empty string.

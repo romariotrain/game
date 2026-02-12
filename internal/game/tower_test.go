@@ -327,7 +327,7 @@ func TestZoneHasOneBoss(t *testing.T) {
 		}
 	}
 
-	for zone := 1; zone <= 3; zone++ {
+	for zone := 1; zone <= 5; zone++ {
 		if bossByZone[zone] != 1 {
 			t.Fatalf("expected exactly 1 boss in zone %d, got %d", zone, bossByZone[zone])
 		}

@@ -2,6 +2,7 @@ package game
 
 import (
 	"fmt"
+	"math"
 	"math/rand"
 	"time"
 
@@ -41,74 +42,334 @@ func NewEngine(db *database.DB) (*Engine, error) {
 // FloorName returns the display name for a tower floor range.
 func FloorName(floor int) string {
 	switch {
-	case floor <= 5:
-		return "Башня: Новичок"
 	case floor <= 10:
-		return "Башня: Искатель"
-	case floor <= 15:
-		return "Башня: Ветеран"
+		return "Туманные Болота"
+	case floor <= 20:
+		return "Забытые Руины"
+	case floor <= 30:
+		return "Ледяные Пики"
+	case floor <= 40:
+		return "Пепельные Разломы"
+	case floor <= 50:
+		return "Цитадель Бездны"
 	default:
 		return fmt.Sprintf("Башня: Этаж %d", floor)
 	}
 }
 
 func GetPresetEnemies() []models.Enemy {
-	return []models.Enemy{
-		// === Floor 1-5: Novice ===
-		{Name: "Гоблин", Description: "Слабый, но хитрый монстр", Rank: models.RankE, Type: models.EnemyRegular,
-			HP: 80, Attack: 8, Floor: 1, Zone: 1},
-		{Name: "Скелет-страж", Description: "Неупокоенный воин подземелья", Rank: models.RankE, Type: models.EnemyRegular,
-			HP: 90, Attack: 9, Floor: 2, Zone: 1},
-		{Name: "Волк-тень", Description: "Быстрый хищник из тёмного мира", Rank: models.RankD, Type: models.EnemyRegular,
-			HP: 120, Attack: 12, Floor: 3, Zone: 1},
-		{Name: "Каменный голем", Description: "Медленный, но невероятно прочный", Rank: models.RankD, Type: models.EnemyRegular,
-			HP: 150, Attack: 14, Floor: 4, Zone: 1},
-		{Name: "Игрис — Рыцарь Крови", Description: "Легендарный рыцарь, верный страж данжа. Его клинок не знает пощады.",
-			Rank: models.RankC, Type: models.EnemyRegular,
-			HP: 300, Attack: 20, Floor: 5, Zone: 2},
-
-		// === Floor 6-10: Seeker ===
-		{Name: "Тёмный рыцарь", Description: "Опытный воин, павший во тьму", Rank: models.RankC, Type: models.EnemyRegular,
-			HP: 200, Attack: 18, Floor: 6, Zone: 2},
-		{Name: "Ядовитый виверн", Description: "Крылатый ящер с отравленным жалом", Rank: models.RankC, Type: models.EnemyRegular,
-			HP: 220, Attack: 20, Floor: 7, Zone: 2},
-		{Name: "Демон-маг", Description: "Владеет разрушительной магией", Rank: models.RankB, Type: models.EnemyRegular,
-			HP: 280, Attack: 24, Floor: 8, Zone: 2},
-		{Name: "Ледяной великан", Description: "Древний страж ледяных пещер", Rank: models.RankB, Type: models.EnemyRegular,
-			HP: 320, Attack: 26, Floor: 9, Zone: 2},
-		{Name: "Барука — Король муравьёв", Description: "Монструозный повелитель насекомых. Его панцирь почти непробиваем.",
-			Rank: models.RankA, Type: models.EnemyRegular,
-			HP: 500, Attack: 32, Floor: 10, Zone: 3},
-
-		// === Floor 11-15: Veteran ===
-		{Name: "Архидемон", Description: "Один из высших демонов, невероятная мощь", Rank: models.RankA, Type: models.EnemyRegular,
-			HP: 450, Attack: 30, Floor: 11, Zone: 3},
-		{Name: "Драконид", Description: "Полудракон-получеловек, воин огня", Rank: models.RankA, Type: models.EnemyRegular,
-			HP: 500, Attack: 34, Floor: 12, Zone: 3},
-		{Name: "Страж Бездны", Description: "Сущность из глубин тёмного измерения", Rank: models.RankS, Type: models.EnemyRegular,
-			HP: 600, Attack: 38, Floor: 13, Zone: 3},
-		{Name: "Монарх Хаоса", Description: "Повелитель разрушения и безумия", Rank: models.RankS, Type: models.EnemyRegular,
-			HP: 700, Attack: 42, Floor: 14, Zone: 3},
-		{Name: "Монарх Теней", Description: "Повелитель теней и смерти. Последнее испытание для сильнейших.",
-			Rank: models.RankS, Type: models.EnemyRegular,
-			HP: 1000, Attack: 50, Floor: 15, Zone: 3},
+	type zoneTemplate struct {
+		Zone      int
+		Biome     string
+		MinLevel  int
+		MaxLevel  int
+		Names     []string
+		LoreLabel string
 	}
+
+	zones := []zoneTemplate{
+		{
+			Zone:      1,
+			Biome:     "swamp",
+			MinLevel:  2,
+			MaxLevel:  6,
+			LoreLabel: "Туманные Болота",
+			Names: []string{
+				"Квакающий Разведчик",
+				"Болотный Пиявочник",
+				"Гнилотный Шаман",
+				"Трясинный Волк",
+				"Моховой Голем",
+				"Токсичный Удильщик",
+				"Ведьмин Грибник",
+				"Слизень-Разъедатель",
+				"Пасть Топи",
+				"Хозяйка Туманов Морра",
+			},
+		},
+		{
+			Zone:      2,
+			Biome:     "ruins",
+			MinLevel:  7,
+			MaxLevel:  12,
+			LoreLabel: "Забытые Руины",
+			Names: []string{
+				"Ржавый Страж Портала",
+				"Пыльный Скелет-Рыцарь",
+				"Летучая Моль Проклятий",
+				"Крипт-Охотник",
+				"Костяной Арбалетчик",
+				"Каменный Идол",
+				"Тень Архива",
+				"Пожиратель Реликвий",
+				"Жрец Разломанных Печатей",
+				"Архонт Руин Кальдрос",
+			},
+		},
+		{
+			Zone:      3,
+			Biome:     "frost",
+			MinLevel:  13,
+			MaxLevel:  18,
+			LoreLabel: "Ледяные Пики",
+			Names: []string{
+				"Снежный Падальщик",
+				"Морозный Пехотинец",
+				"Ледяная Гарпия",
+				"Вьюжный Волк",
+				"Осколочный Голем",
+				"Северный Берсерк",
+				"Хрустальный Охотник",
+				"Ледяной Колдун",
+				"Белый Йети",
+				"Король Вьюги Хельгрим",
+			},
+		},
+		{
+			Zone:      4,
+			Biome:     "volcanic",
+			MinLevel:  19,
+			MaxLevel:  24,
+			LoreLabel: "Пепельные Разломы",
+			Names: []string{
+				"Пепельный Разбойник",
+				"Обугленный Скелет",
+				"Лавовый Плевун",
+				"Огненный Гончий",
+				"Шлаковый Голем",
+				"Жрец Пепла",
+				"Крылатый Угольник",
+				"Демон Искр",
+				"Плавильщик Костей",
+				"Владыка Разломов Азгар",
+			},
+		},
+		{
+			Zone:      5,
+			Biome:     "void",
+			MinLevel:  25,
+			MaxLevel:  30,
+			LoreLabel: "Цитадель Бездны",
+			Names: []string{
+				"Безликий Смотритель",
+				"Паразит Пустоты",
+				"Теневой Дуэлянт",
+				"Пожиратель Света",
+				"Хор Бездны",
+				"Клеймённый Инквизитор",
+				"Рыцарь Нулевой Тени",
+				"Коготь Монарха",
+				"Оракул Тишины",
+				"Монарх Бездны Ноктэрн",
+			},
+		},
+	}
+
+	enemies := make([]models.Enemy, 0, 50)
+	floor := 1
+
+	for _, z := range zones {
+		for i, name := range z.Names {
+			slot := i + 1
+			level := levelForSlot(z.MinLevel, z.MaxLevel, slot)
+			role := roleForSlot(slot)
+			targetMin, targetMax := targetWinrateForSlot(slot)
+			isBoss := slot == 10
+
+			typeValue := models.EnemyRegular
+			if isBoss {
+				typeValue = models.EnemyBoss
+			}
+
+			baseHP := 120 + level*26
+			baseATK := 8 + int(math.Round(float64(level)*0.9))
+			power := rolePowerMultiplier(slot)
+			hp := int(math.Round(float64(baseHP) * power))
+			atk := int(math.Round(float64(baseATK) * (0.8 + power*0.35)))
+
+			enemies = append(enemies, models.Enemy{
+				Name:             name,
+				Description:      fmt.Sprintf("%s: %s", z.LoreLabel, roleLore(role)),
+				Rank:             rankForZoneAndSlot(z.Zone, slot),
+				Type:             typeValue,
+				Level:            level,
+				HP:               hp,
+				Attack:           atk,
+				Floor:            floor,
+				Zone:             z.Zone,
+				IsBoss:           isBoss,
+				Biome:            z.Biome,
+				Role:             role,
+				IsTransition:     slot <= 2,
+				TargetWinRateMin: targetMin,
+				TargetWinRateMax: targetMax,
+			})
+			floor++
+		}
+	}
+
+	return enemies
 }
 
 func (e *Engine) InitEnemies() error {
-	count, err := e.DB.GetEnemyCount()
+	preset := GetPresetEnemies()
+	needsReseed, err := e.DB.EnemyCatalogNeedsReseed(preset)
 	if err != nil {
 		return err
 	}
-	if count == 0 {
-		enemies := GetPresetEnemies()
-		for i := range enemies {
-			if err := e.DB.InsertEnemy(&enemies[i]); err != nil {
-				return err
-			}
+	if needsReseed {
+		if err := e.DB.ReplaceEnemyCatalog(preset); err != nil {
+			return err
 		}
 	}
 	return e.DB.NormalizeEnemyZones()
+}
+
+func levelForSlot(minLevel, maxLevel, slot int) int {
+	pattern := []int{0, 1, 1, 2, 2, 3, 4, 4, 5, 5}
+	if slot < 1 {
+		slot = 1
+	}
+	if slot > len(pattern) {
+		slot = len(pattern)
+	}
+	level := minLevel + pattern[slot-1]
+	if level > maxLevel {
+		level = maxLevel
+	}
+	return level
+}
+
+func roleForSlot(slot int) string {
+	switch slot {
+	case 1:
+		return "TRANSITION"
+	case 2:
+		return "TRANSITION_ELITE"
+	case 3:
+		return "NORMAL"
+	case 4:
+		return "HARD"
+	case 5:
+		return "EASY"
+	case 6:
+		return "HARD"
+	case 7:
+		return "ELITE"
+	case 8:
+		return "NORMAL"
+	case 9:
+		return "MINIBOSS"
+	case 10:
+		return "BOSS"
+	default:
+		return "NORMAL"
+	}
+}
+
+func rolePowerMultiplier(slot int) float64 {
+	switch slot {
+	case 1:
+		return 1.15
+	case 2:
+		return 1.22
+	case 3:
+		return 1.00
+	case 4:
+		return 1.08
+	case 5:
+		return 0.90
+	case 6:
+		return 1.10
+	case 7:
+		return 1.20
+	case 8:
+		return 1.02
+	case 9:
+		return 1.30
+	case 10:
+		return 1.38
+	default:
+		return 1.00
+	}
+}
+
+func targetWinrateForSlot(slot int) (float64, float64) {
+	switch slot {
+	case 1:
+		return 15, 25
+	case 2:
+		return 12, 20
+	case 3:
+		return 30, 45
+	case 4:
+		return 20, 30
+	case 5:
+		return 45, 60
+	case 6:
+		return 20, 30
+	case 7:
+		return 12, 20
+	case 8:
+		return 30, 45
+	case 9:
+		return 8, 15
+	case 10:
+		return 5, 12
+	default:
+		return 30, 45
+	}
+}
+
+func rankForZoneAndSlot(zone, slot int) models.QuestRank {
+	switch zone {
+	case 1:
+		if slot <= 5 {
+			return models.RankE
+		}
+		return models.RankD
+	case 2:
+		if slot <= 5 {
+			return models.RankC
+		}
+		return models.RankB
+	case 3:
+		if slot <= 4 {
+			return models.RankB
+		}
+		if slot <= 8 {
+			return models.RankA
+		}
+		return models.RankS
+	case 4:
+		if slot <= 5 {
+			return models.RankA
+		}
+		return models.RankS
+	default:
+		return models.RankS
+	}
+}
+
+func roleLore(role string) string {
+	switch role {
+	case "TRANSITION":
+		return "входной страж зоны: опасен с первых секунд."
+	case "TRANSITION_ELITE":
+		return "пограничный элитный противник, проверяет базу билда."
+	case "HARD":
+		return "усиливает давление и наказывает ошибки."
+	case "EASY":
+		return "тактическая передышка, но не бесплатная."
+	case "ELITE":
+		return "элитный враг с усиленной выживаемостью."
+	case "MINIBOSS":
+		return "мини-босс, близок к порогу зоны."
+	case "BOSS":
+		return "властитель зоны и ключ к следующему этапу."
+	default:
+		return "боевой противник башни."
+	}
 }
 
 func (e *Engine) GetEnemies() ([]models.Enemy, error) {

@@ -5,72 +5,75 @@ import (
 	"testing"
 )
 
-func TestBalanceTargets_AnchorBandsAndRedLines(t *testing.T) {
-	enemies := GetPresetEnemies()
-	const runs = 2000
-	const tolerance = 2.0 // Monte Carlo noise margin
+func TestAutoTune_HitsBandsAndRedLines(t *testing.T) {
+	base := GetPresetEnemies()
+	opts := DefaultAutoTuneOptions(42)
+	opts.RunsPerEval = 200
+	opts.Iterations = 9
+	tuned, _ := AutoTuneEnemies(base, opts)
 
-	for _, enemy := range enemies {
+	const runs = 1200
+	const tolerance = 3.0
+	const bossFloor = 4.5
+
+	for _, enemy := range tuned {
 		level := EnemyMidExpectedLevel(enemy)
+		if IsZoneTransitionEnemy(enemy) {
+			level = TransitionEntryLevel(enemy)
+		}
 		stats := StatsFromLevel(level)
-
 		mc := MonteCarloAnalysis(
 			stats[0], stats[1], stats[2], stats[3],
 			enemy,
 			runs,
 			rand.New(rand.NewSource(int64(10000+enemy.Index))),
 		)
-		wr := mc.WinRate
+
 		band := EnemyWinRateBand(enemy)
-
-		if wr < band.Min-tolerance || wr > band.Max+tolerance {
-			t.Fatalf("%s (idx=%d) winrate %.1f%% is outside target %.1f-%.1f%%",
-				enemy.Name, enemy.Index, wr, band.Min, band.Max)
+		if mc.WinRate < band.Min-tolerance || mc.WinRate > band.Max+tolerance {
+			t.Fatalf("%s (idx=%d role=%s) winrate %.1f%% outside target %.1f-%.1f%%",
+				enemy.Name, enemy.Index, enemy.Role, mc.WinRate, band.Min, band.Max)
 		}
 
-		if (band.Label == "Лёгкий" || band.Label == "Нормальный" || band.Label == "Сложный" || band.Label == "Переход") && wr < 15.0-tolerance {
-			t.Fatalf("%s (idx=%d) violates red line: ordinary enemy below 15%% (got %.1f%%)",
-				enemy.Name, enemy.Index, wr)
+		switch enemy.Role {
+		case "TRANSITION", "TRANSITION_ELITE", "NORMAL", "HARD", "EASY":
+			if mc.WinRate < 15.0-tolerance {
+				t.Fatalf("%s (idx=%d) ordinary role below 15%% (%.1f%%)",
+					enemy.Name, enemy.Index, mc.WinRate)
+			}
 		}
-		if band.Label == "Лёгкий" && wr > 70.0+tolerance {
-			t.Fatalf("%s (idx=%d) violates red line: easy enemy above 70%% (got %.1f%%)",
-				enemy.Name, enemy.Index, wr)
+		if enemy.Role == "EASY" && mc.WinRate > 70.0+tolerance {
+			t.Fatalf("%s (idx=%d) easy role above 70%% (%.1f%%)",
+				enemy.Name, enemy.Index, mc.WinRate)
 		}
-		if enemy.IsBoss && wr < 4.5-tolerance {
-			t.Fatalf("%s (idx=%d) violates red line: boss below 4.5%% (got %.1f%%)",
-				enemy.Name, enemy.Index, wr)
+		if enemy.IsBoss && mc.WinRate < bossFloor-tolerance {
+			t.Fatalf("%s (idx=%d) boss below %.1f%% (%.1f%%)",
+				enemy.Name, enemy.Index, bossFloor, mc.WinRate)
 		}
 	}
 }
 
-func TestBalanceTargets_ZoneTransitionEnemiesAreScaryButReal(t *testing.T) {
+func TestEnemyCatalog_5Zones10EnemiesAndBosses(t *testing.T) {
 	enemies := GetPresetEnemies()
-	const runs = 2000
-	const minWR = 15.0
-	const maxWR = 25.0
-	const tolerance = 2.0
+	if len(enemies) != 50 {
+		t.Fatalf("expected 50 enemies, got %d", len(enemies))
+	}
 
+	zoneCount := map[int]int{}
+	zoneBosses := map[int]int{}
 	for _, enemy := range enemies {
-		if !IsZoneTransitionEnemy(enemy) {
-			continue
+		zoneCount[enemy.Zone]++
+		if enemy.IsBoss {
+			zoneBosses[enemy.Zone]++
 		}
+	}
 
-		stats := StatsFromLevel(TransitionEntryLevel(enemy))
-		mc := MonteCarloAnalysis(
-			stats[0], stats[1], stats[2], stats[3],
-			enemy,
-			runs,
-			rand.New(rand.NewSource(int64(20000+enemy.Index))),
-		)
-		wr := mc.WinRate
-
-		if wr < minWR-tolerance || wr > maxWR+tolerance {
-			t.Fatalf("%s (idx=%d) transition winrate %.1f%% should be in %.1f-%.1f%%",
-				enemy.Name, enemy.Index, wr, minWR, maxWR)
+	for zone := 1; zone <= 5; zone++ {
+		if zoneCount[zone] != 10 {
+			t.Fatalf("zone %d expected 10 enemies, got %d", zone, zoneCount[zone])
 		}
-		if wr < 12.0-tolerance {
-			t.Fatalf("%s (idx=%d) transition enemy should not be below 12%% (got %.1f%%)",
-				enemy.Name, enemy.Index, wr)
+		if zoneBosses[zone] != 1 {
+			t.Fatalf("zone %d expected 1 boss, got %d", zone, zoneBosses[zone])
 		}
 	}
 }

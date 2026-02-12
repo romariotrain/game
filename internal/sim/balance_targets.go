@@ -1,5 +1,7 @@
 package sim
 
+import "strings"
+
 // WinRateBand describes an expected winrate range for one enemy archetype.
 type WinRateBand struct {
 	Label string
@@ -20,14 +22,10 @@ func EnemyMidExpectedLevel(enemy EnemyDef) int {
 	minLvl := enemy.ExpectedMinLevel
 	maxLvl := enemy.ExpectedMaxLevel
 	if minLvl <= 0 && maxLvl <= 0 {
-		switch enemy.Zone {
-		case 1:
-			return 3
-		case 2:
-			return 10
-		default:
-			return 20
+		if enemy.Level > 0 {
+			return enemy.Level
 		}
+		return 1
 	}
 	if minLvl <= 0 {
 		minLvl = maxLvl
@@ -41,39 +39,95 @@ func EnemyMidExpectedLevel(enemy EnemyDef) int {
 	return int((float64(minLvl) + float64(maxLvl)) / 2.0)
 }
 
-// EnemyWinRateBand maps each preset enemy to its target band.
+// EnemyWinRateBand returns target range from enemy metadata.
 func EnemyWinRateBand(enemy EnemyDef) WinRateBand {
-	switch enemy.Index {
-	case 0, 7, 13:
-		return WinRateBand{Label: "Лёгкий", Min: 45, Max: 60}
-	case 1, 6, 11:
-		return WinRateBand{Label: "Нормальный", Min: 30, Max: 45}
-	case 2, 12:
-		return WinRateBand{Label: "Сложный", Min: 20, Max: 30}
-	case 4, 9:
-		return WinRateBand{Label: "Переход", Min: 15, Max: 25}
-	case 5, 10:
-		return WinRateBand{Label: "Элитка", Min: 12, Max: 20}
-	case 3, 8, 14:
-		return WinRateBand{Label: "Босс зоны", Min: 5, Max: 12}
-	default:
-		if enemy.IsBoss {
-			return WinRateBand{Label: "Босс зоны", Min: 5, Max: 12}
-		}
-		return WinRateBand{Label: "Нормальный", Min: 30, Max: 45}
+	minV := enemy.TargetWinRateMin
+	maxV := enemy.TargetWinRateMax
+	if minV <= 0 || maxV <= 0 || minV >= maxV {
+		minV, maxV = 30, 45
+	}
+	return WinRateBand{
+		Label: RoleLabel(enemy.Role),
+		Min:   minV,
+		Max:   maxV,
 	}
 }
 
-// IsZoneTransitionEnemy marks the first enemy in zones 2 and 3.
+func RoleLabel(role string) string {
+	switch strings.ToUpper(role) {
+	case "TRANSITION":
+		return "Переход"
+	case "TRANSITION_ELITE":
+		return "Переход/Элитка"
+	case "NORMAL":
+		return "Нормальный"
+	case "HARD":
+		return "Сложный"
+	case "EASY":
+		return "Лёгкий"
+	case "ELITE":
+		return "Элитка"
+	case "MINIBOSS":
+		return "Мини-босс"
+	case "BOSS":
+		return "Босс зоны"
+	default:
+		return "Нормальный"
+	}
+}
+
+func RolePriority(role string) int {
+	switch strings.ToUpper(role) {
+	case "EASY":
+		return 0
+	case "NORMAL":
+		return 1
+	case "HARD":
+		return 2
+	case "TRANSITION":
+		return 3
+	case "TRANSITION_ELITE":
+		return 4
+	case "ELITE":
+		return 5
+	case "MINIBOSS":
+		return 6
+	case "BOSS":
+		return 7
+	default:
+		return 1
+	}
+}
+
+// IsZoneTransitionEnemy marks zone-opening enemies.
 func IsZoneTransitionEnemy(enemy EnemyDef) bool {
-	return enemy.Index == 4 || enemy.Index == 9
+	return enemy.IsTransition
 }
 
 // TransitionEntryLevel returns "just entered zone" level for transition checks.
 func TransitionEntryLevel(enemy EnemyDef) int {
-	lvl := enemy.ExpectedMinLevel - 1
-	if lvl < 1 {
-		lvl = 1
+	if enemy.Zone <= 1 {
+		return EnemyMidExpectedLevel(enemy)
 	}
-	return lvl
+	if enemy.ExpectedMinLevel > 0 {
+		lvl := enemy.ExpectedMinLevel - 1
+		if lvl < 1 {
+			return 1
+		}
+		return lvl
+	}
+	if enemy.Level > 1 {
+		return enemy.Level - 1
+	}
+	return 1
+}
+
+func maxZone(enemies []EnemyDef) int {
+	mz := 1
+	for _, e := range enemies {
+		if e.Zone > mz {
+			mz = e.Zone
+		}
+	}
+	return mz
 }

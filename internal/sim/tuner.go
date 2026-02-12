@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"sort"
 	"strings"
 )
 
@@ -36,8 +37,8 @@ func DefaultAutoTuneOptions(seed int64) AutoTuneOptions {
 		Seed:        seed,
 		RunsPerEval: 240,
 		Iterations:  10,
-		MinPower:    0.55,
-		MaxPower:    1.85,
+		MinPower:    0.20,
+		MaxPower:    2.20,
 	}
 }
 
@@ -54,7 +55,7 @@ func AutoTuneEnemies(base []EnemyDef, opts AutoTuneOptions) ([]EnemyDef, []Enemy
 		opts.Iterations = 10
 	}
 	if opts.MinPower <= 0 {
-		opts.MinPower = 0.55
+		opts.MinPower = 0.20
 	}
 	if opts.MaxPower <= opts.MinPower {
 		opts.MaxPower = opts.MinPower + 1.0
@@ -70,7 +71,8 @@ func AutoTuneEnemies(base []EnemyDef, opts AutoTuneOptions) ([]EnemyDef, []Enemy
 		results = append(results, result)
 	}
 
-	assignBosses(tuned)
+	enforceZonePowerConstraints(tuned, opts)
+	ensureOneBossPerZone(tuned)
 	return tuned, results
 }
 
@@ -83,51 +85,88 @@ func tuneOneEnemy(enemy EnemyDef, opts AutoTuneOptions) (EnemyDef, EnemyTuneResu
 	}
 	stats := StatsFromLevel(evalLevel)
 	targetMid := (band.Min + band.Max) / 2.0
+	baseHP := enemy.HP
+	baseATK := enemy.Attack
 
-	low := opts.MinPower
-	high := opts.MaxPower
-	bestPower := 1.0
-	bestScore := math.Inf(1)
-	bestWR := 0.0
-
-	for iter := 0; iter < opts.Iterations; iter++ {
-		mid := (low + high) / 2.0
-		winRate := evaluateEnemyPower(enemy, mid, stats, opts, int64(iter))
-		score := math.Abs(winRate - targetMid)
-		if score < bestScore {
-			bestScore = score
-			bestPower = mid
-			bestWR = winRate
-		}
-
-		// Higher power makes enemy stronger and winrate lower.
-		if winRate > targetMid {
-			low = mid
-		} else {
-			high = mid
-		}
+	minHP := int(math.Round(float64(baseHP) * opts.MinPower))
+	maxHP := int(math.Round(float64(baseHP) * opts.MaxPower))
+	minATK := int(math.Round(float64(baseATK) * opts.MinPower))
+	maxATK := int(math.Round(float64(baseATK) * opts.MaxPower))
+	if minHP < 1 {
+		minHP = 1
+	}
+	if maxHP < minHP {
+		maxHP = minHP
+	}
+	if minATK < 1 {
+		minATK = 1
+	}
+	if maxATK < minATK {
+		maxATK = minATK
 	}
 
-	// Final check on interval edges in case MC-noise shifted best point.
-	for _, power := range []float64{low, high} {
-		winRate := evaluateEnemyPower(enemy, power, stats, opts, int64(opts.Iterations)+1)
-		score := math.Abs(winRate - targetMid)
-		if score < bestScore {
-			bestScore = score
-			bestPower = power
-			bestWR = winRate
+	bestHP := baseHP
+	bestATK := baseATK
+	bestScore := math.Inf(1)
+	bestWR := 0.0
+	round := int64(0)
+
+	for atk := minATK; atk <= maxATK; atk++ {
+		hpLow := minHP
+		hpHigh := maxHP
+		localBestHP := hpLow
+		localBestWR := 0.0
+		localBestScore := math.Inf(1)
+
+		for iter := 0; iter < opts.Iterations; iter++ {
+			midHP := (hpLow + hpHigh) / 2
+			winRate := evaluateEnemyCandidate(enemy, midHP, atk, stats, opts, round)
+			round++
+
+			score := math.Abs(winRate - targetMid)
+			if score < localBestScore {
+				localBestScore = score
+				localBestHP = midHP
+				localBestWR = winRate
+			}
+
+			// Higher HP makes enemy stronger and winrate lower.
+			if winRate > targetMid {
+				hpLow = midHP + 1
+			} else {
+				hpHigh = midHP - 1
+			}
+			if hpLow > hpHigh {
+				break
+			}
+		}
+
+		// Evaluate search boundaries for this ATK.
+		for _, hp := range []int{hpLow, hpHigh} {
+			if hp < minHP || hp > maxHP {
+				continue
+			}
+			winRate := evaluateEnemyCandidate(enemy, hp, atk, stats, opts, round)
+			round++
+			score := math.Abs(winRate - targetMid)
+			if score < localBestScore {
+				localBestScore = score
+				localBestHP = hp
+				localBestWR = winRate
+			}
+		}
+
+		if localBestScore < bestScore {
+			bestScore = localBestScore
+			bestHP = localBestHP
+			bestATK = atk
+			bestWR = localBestWR
 		}
 	}
 
 	tuned := enemy
-	tuned.HP = int(math.Round(float64(enemy.HP) * bestPower))
-	if tuned.HP < 1 {
-		tuned.HP = 1
-	}
-	tuned.Attack = int(math.Round(float64(enemy.Attack) * bestPower))
-	if tuned.Attack < 1 {
-		tuned.Attack = 1
-	}
+	tuned.HP = bestHP
+	tuned.Attack = bestATK
 
 	return tuned, EnemyTuneResult{
 		EnemyName:    enemy.Name,
@@ -137,28 +176,23 @@ func tuneOneEnemy(enemy EnemyDef, opts AutoTuneOptions) (EnemyDef, EnemyTuneResu
 		EvalLevel:    evalLevel,
 		OldHP:        enemy.HP,
 		OldAttack:    enemy.Attack,
-		NewHP:        tuned.HP,
-		NewAttack:    tuned.Attack,
+		NewHP:        bestHP,
+		NewAttack:    bestATK,
 		FinalWinRate: bestWR,
 	}
 }
 
-func evaluateEnemyPower(
+func evaluateEnemyCandidate(
 	enemy EnemyDef,
-	power float64,
+	hp int,
+	atk int,
 	stats [4]int,
 	opts AutoTuneOptions,
 	round int64,
 ) float64 {
 	candidate := enemy
-	candidate.HP = int(math.Round(float64(enemy.HP) * power))
-	if candidate.HP < 1 {
-		candidate.HP = 1
-	}
-	candidate.Attack = int(math.Round(float64(enemy.Attack) * power))
-	if candidate.Attack < 1 {
-		candidate.Attack = 1
-	}
+	candidate.HP = hp
+	candidate.Attack = atk
 
 	seed := opts.Seed + int64(enemy.Index)*1000 + round*17
 	mc := MonteCarloAnalysis(
@@ -191,4 +225,78 @@ func AutoTuneSummary(results []EnemyTuneResult) string {
 	}
 	sb.WriteString("\n")
 	return sb.String()
+}
+
+func enforceZonePowerConstraints(enemies []EnemyDef, opts AutoTuneOptions) {
+	zoneToIDs := map[int][]int{}
+	for i := range enemies {
+		zoneToIDs[enemies[i].Zone] = append(zoneToIDs[enemies[i].Zone], i)
+	}
+
+	for _, ids := range zoneToIDs {
+		sort.Slice(ids, func(i, j int) bool {
+			return enemies[ids[i]].Floor < enemies[ids[j]].Floor
+		})
+
+		bossID := -1
+		maxOther := 0.0
+		for _, id := range ids {
+			p := effectivePower(enemies[id])
+			if enemies[id].IsBoss {
+				bossID = id
+				continue
+			}
+			if p > maxOther {
+				maxOther = p
+			}
+		}
+		if bossID >= 0 {
+			bossPower := effectivePower(enemies[bossID])
+			target := maxOther * 1.05
+			if target > 0 && bossPower < target {
+				scale := target / bossPower
+				if scale > 1.12 {
+					scale = 1.12
+				}
+
+				candidate := enemies[bossID]
+				scaleEnemyPower(&candidate, scale)
+
+				// Priority 1: do not break winrate band while enforcing boss dominance.
+				band := EnemyWinRateBand(candidate)
+				stats := StatsFromLevel(EnemyMidExpectedLevel(candidate))
+				checkRuns := opts.RunsPerEval / 2
+				if checkRuns < 120 {
+					checkRuns = 120
+				}
+				check := MonteCarloAnalysis(
+					stats[0], stats[1], stats[2], stats[3],
+					candidate,
+					checkRuns,
+					rand.New(rand.NewSource(opts.Seed+int64(candidate.Index)*77+999)),
+				)
+				if check.WinRate >= band.Min-1.0 {
+					enemies[bossID] = candidate
+				}
+			}
+		}
+	}
+}
+
+func effectivePower(enemy EnemyDef) float64 {
+	return float64(enemy.HP)*0.65 + float64(enemy.Attack)*11.0
+}
+
+func scaleEnemyPower(enemy *EnemyDef, scale float64) {
+	if enemy == nil || scale <= 0 {
+		return
+	}
+	enemy.HP = int(math.Round(float64(enemy.HP) * scale))
+	enemy.Attack = int(math.Round(float64(enemy.Attack) * scale))
+	if enemy.HP < 1 {
+		enemy.HP = 1
+	}
+	if enemy.Attack < 1 {
+		enemy.Attack = 1
+	}
 }

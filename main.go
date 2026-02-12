@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"os"
 
 	fyneApp "fyne.io/fyne/v2/app"
 
@@ -13,6 +15,10 @@ import (
 )
 
 func main() {
+	if runSeedEnemiesCLI() {
+		return
+	}
+
 	// Headless simulation mode — no DB, no UI
 	if sim.RunCLIAutoTune() {
 		return
@@ -65,4 +71,32 @@ func main() {
 	features := config.DefaultFeatures()
 	appUI := ui.NewApp(application, engine, features)
 	appUI.Run()
+}
+
+func runSeedEnemiesCLI() bool {
+	args := os.Args[1:]
+	if len(args) == 0 || args[0] != "--seed-enemies" {
+		return false
+	}
+
+	db, err := database.New()
+	if err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
+	defer db.Close()
+
+	engine, err := game.NewEngine(db)
+	if err != nil {
+		log.Fatalf("Failed to initialize game engine: %v", err)
+	}
+	if err := engine.InitEnemies(); err != nil {
+		log.Fatalf("Failed to seed enemies: %v", err)
+	}
+
+	count, err := db.GetEnemyCount()
+	if err != nil {
+		log.Fatalf("Failed to count enemies: %v", err)
+	}
+	fmt.Printf("Enemy catalog ready: %d enemies across 5 zones.\n", count)
+	return true
 }

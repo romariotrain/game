@@ -148,12 +148,20 @@ func (db *DB) migrate() error {
 		description TEXT NOT NULL DEFAULT '',
 		rank TEXT NOT NULL DEFAULT 'E',
 		type TEXT NOT NULL DEFAULT 'regular',
+		level INTEGER NOT NULL DEFAULT 1,
 		hp INTEGER NOT NULL DEFAULT 100,
 		attack INTEGER NOT NULL DEFAULT 10,
 		floor INTEGER NOT NULL DEFAULT 1,
 		zone INTEGER NOT NULL DEFAULT 1,
-		is_boss INTEGER NOT NULL DEFAULT 0
+		is_boss INTEGER NOT NULL DEFAULT 0,
+		biome TEXT NOT NULL DEFAULT '',
+		role TEXT NOT NULL DEFAULT 'NORMAL',
+		is_transition INTEGER NOT NULL DEFAULT 0,
+		target_winrate_min REAL NOT NULL DEFAULT 0,
+		target_winrate_max REAL NOT NULL DEFAULT 0
 	);
+
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_enemies_name_unique ON enemies(name);
 
 	CREATE TABLE IF NOT EXISTS streak_titles (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -252,6 +260,27 @@ func (db *DB) migrate() error {
 		return err
 	}
 	if err := db.addColumnIfMissing("enemies", "is_boss", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := db.addColumnIfMissing("enemies", "level", "INTEGER NOT NULL DEFAULT 1"); err != nil {
+		return err
+	}
+	if err := db.addColumnIfMissing("enemies", "biome", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := db.addColumnIfMissing("enemies", "role", "TEXT NOT NULL DEFAULT 'NORMAL'"); err != nil {
+		return err
+	}
+	if err := db.addColumnIfMissing("enemies", "is_transition", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := db.addColumnIfMissing("enemies", "target_winrate_min", "REAL NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := db.addColumnIfMissing("enemies", "target_winrate_max", "REAL NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if _, err := db.conn.Exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_enemies_name_unique ON enemies(name)"); err != nil {
 		return err
 	}
 	if err := db.NormalizeEnemyZones(); err != nil {

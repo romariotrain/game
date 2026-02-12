@@ -74,6 +74,9 @@ type EnemyDef struct {
 	Index  int
 	Name   string
 	Rank   string // "E","D","C","B","A","S"
+	Role   string // TRANSITION, ELITE, NORMAL, HARD, EASY, MINIBOSS, BOSS
+	Biome  string
+	Level  int
 	HP     int
 	Attack int
 	AGI    int
@@ -84,6 +87,9 @@ type EnemyDef struct {
 	Floor            int
 	Zone             int
 	IsBoss           bool
+	IsTransition     bool
+	TargetWinRateMin float64
+	TargetWinRateMax float64
 }
 
 // Archetype describes a player behavior pattern for simulation.

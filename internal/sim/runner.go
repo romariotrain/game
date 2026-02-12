@@ -2,6 +2,14 @@ package sim
 
 import "math/rand"
 
+type FullClearEstimate struct {
+	Runs        int
+	ReachedRuns int
+	AvgDays     float64
+	MinDays     int
+	MaxDays     int
+}
+
 // SimulateDay runs one day of gameplay: quests + battles.
 func SimulateDay(player *PlayerState, arch Archetype, enemies []EnemyDef, rng *rand.Rand) DaySnapshot {
 	player.DayNumber++
@@ -126,20 +134,7 @@ func pickNextEnemy(player *PlayerState, enemies []EnemyDef) *EnemyDef {
 }
 
 func regularDifficultyPriority(enemy EnemyDef) int {
-	switch EnemyWinRateBand(enemy).Label {
-	case "Лёгкий":
-		return 0
-	case "Нормальный":
-		return 1
-	case "Сложный":
-		return 2
-	case "Элитка":
-		return 3
-	case "Переход":
-		return 4
-	default:
-		return 2
-	}
+	return RolePriority(enemy.Role)
 }
 
 func isEasierRegular(a, b EnemyDef) bool {
@@ -265,6 +260,8 @@ func CheckProgressionTimeline(snapshots []DaySnapshot) []ProgressionCheck {
 		{1, 0},  // Start zone (always met)
 		{2, 7},  // Zone 2 by day 7
 		{3, 21}, // Zone 3 by day 21
+		{4, 45}, // Zone 4 by day 45
+		{5, 90}, // Zone 5 by day 90
 	}
 
 	checks := make([]ProgressionCheck, len(targets))
@@ -286,4 +283,62 @@ func CheckProgressionTimeline(snapshots []DaySnapshot) []ProgressionCheck {
 	}
 
 	return checks
+}
+
+// EstimateFullClear returns day-to-clear stats for defeating all enemies.
+func EstimateFullClear(cfg SimConfig, runs int) FullClearEstimate {
+	if runs <= 0 {
+		runs = 1
+	}
+
+	estimate := FullClearEstimate{
+		Runs:    runs,
+		MinDays: cfg.Days,
+		MaxDays: 0,
+	}
+
+	for r := 0; r < runs; r++ {
+		runCfg := cfg
+		runCfg.Seed = cfg.Seed + int64(r*17)
+		clearDay := estimateFullClearDay(runCfg)
+		if clearDay == -1 {
+			continue
+		}
+		estimate.ReachedRuns++
+		estimate.AvgDays += float64(clearDay)
+		if clearDay < estimate.MinDays {
+			estimate.MinDays = clearDay
+		}
+		if clearDay > estimate.MaxDays {
+			estimate.MaxDays = clearDay
+		}
+	}
+
+	if estimate.ReachedRuns > 0 {
+		estimate.AvgDays /= float64(estimate.ReachedRuns)
+	} else {
+		estimate.MinDays = 0
+	}
+	return estimate
+}
+
+func estimateFullClearDay(cfg SimConfig) int {
+	rng := rand.New(rand.NewSource(cfg.Seed))
+	player := NewPlayerState()
+	enemies := cfg.Enemies
+	if len(enemies) == 0 {
+		enemies = GetPresetEnemies()
+	}
+	total := len(enemies)
+	if total == 0 {
+		return -1
+	}
+
+	for day := 1; day <= cfg.Days; day++ {
+		SimulateDay(player, cfg.Archetype, enemies, rng)
+		if len(player.DefeatedEnemyIDs) >= total {
+			return day
+		}
+	}
+	return -1
 }

@@ -13,9 +13,23 @@ import (
 
 func (db *DB) InsertEnemy(e *models.Enemy) error {
 	res, err := db.conn.Exec(
-		`INSERT INTO enemies (name, description, rank, type, hp, attack, floor, zone, is_boss)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		e.Name, e.Description, string(e.Rank), string(e.Type), e.HP, e.Attack, e.Floor, e.Zone, boolToInt(e.IsBoss),
+		`INSERT INTO enemies (name, description, rank, type, level, hp, attack, floor, zone, is_boss, biome, role, is_transition, target_winrate_min, target_winrate_max)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.Name,
+		e.Description,
+		string(e.Rank),
+		string(e.Type),
+		e.Level,
+		e.HP,
+		e.Attack,
+		e.Floor,
+		e.Zone,
+		boolToInt(e.IsBoss),
+		e.Biome,
+		e.Role,
+		boolToInt(e.IsTransition),
+		e.TargetWinRateMin,
+		e.TargetWinRateMax,
 	)
 	if err != nil {
 		return err
@@ -26,7 +40,9 @@ func (db *DB) InsertEnemy(e *models.Enemy) error {
 
 func (db *DB) GetAllEnemies() ([]models.Enemy, error) {
 	rows, err := db.conn.Query(
-		"SELECT id, name, description, rank, type, hp, attack, floor, zone, is_boss FROM enemies ORDER BY zone, id",
+		`SELECT id, name, description, rank, type, level, hp, attack, floor, zone, is_boss, biome, role, is_transition, target_winrate_min, target_winrate_max
+		 FROM enemies
+		 ORDER BY zone, level, id`,
 	)
 	if err != nil {
 		return nil, err
@@ -37,10 +53,29 @@ func (db *DB) GetAllEnemies() ([]models.Enemy, error) {
 	for rows.Next() {
 		var e models.Enemy
 		var isBoss int
-		if err := rows.Scan(&e.ID, &e.Name, &e.Description, &e.Rank, &e.Type, &e.HP, &e.Attack, &e.Floor, &e.Zone, &isBoss); err != nil {
+		var isTransition int
+		if err := rows.Scan(
+			&e.ID,
+			&e.Name,
+			&e.Description,
+			&e.Rank,
+			&e.Type,
+			&e.Level,
+			&e.HP,
+			&e.Attack,
+			&e.Floor,
+			&e.Zone,
+			&isBoss,
+			&e.Biome,
+			&e.Role,
+			&isTransition,
+			&e.TargetWinRateMin,
+			&e.TargetWinRateMax,
+		); err != nil {
 			return nil, err
 		}
 		e.IsBoss = isBoss == 1
+		e.IsTransition = isTransition == 1
 		enemies = append(enemies, e)
 	}
 	return enemies, nil
@@ -52,23 +87,140 @@ func (db *DB) GetEnemyCount() (int, error) {
 	return count, err
 }
 
+// EnemyCatalogNeedsReseed checks whether DB enemies differ from preset catalog.
+func (db *DB) EnemyCatalogNeedsReseed(preset []models.Enemy) (bool, error) {
+	if len(preset) == 0 {
+		return false, nil
+	}
+
+	current, err := db.GetAllEnemies()
+	if err != nil {
+		return false, err
+	}
+	if len(current) != len(preset) {
+		return true, nil
+	}
+
+	type sig struct {
+		Zone   int
+		Level  int
+		IsBoss bool
+	}
+
+	expected := make(map[string]sig, len(preset))
+	for _, e := range preset {
+		expected[e.Name] = sig{
+			Zone:   e.Zone,
+			Level:  e.Level,
+			IsBoss: e.IsBoss || e.Type == models.EnemyBoss,
+		}
+	}
+
+	for _, e := range current {
+		want, ok := expected[e.Name]
+		if !ok {
+			return true, nil
+		}
+		isBoss := e.IsBoss || e.Type == models.EnemyBoss
+		if e.Zone != want.Zone || e.Level != want.Level || isBoss != want.IsBoss {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// ReplaceEnemyCatalog fully reseeds the enemy catalog and clears dependent battle progress.
+func (db *DB) ReplaceEnemyCatalog(enemies []models.Enemy) error {
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Keep schema consistent: enemy IDs change after full reseed, so dependent records must reset.
+	if _, err := tx.Exec("DELETE FROM battle_rewards"); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("DELETE FROM enemy_unlocks"); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("DELETE FROM battles"); err != nil {
+		return err
+	}
+	if _, err := tx.Exec("DELETE FROM enemies"); err != nil {
+		return err
+	}
+
+	for i := range enemies {
+		e := enemies[i]
+		if _, err := tx.Exec(
+			`INSERT INTO enemies (name, description, rank, type, level, hp, attack, floor, zone, is_boss, biome, role, is_transition, target_winrate_min, target_winrate_max)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			e.Name,
+			e.Description,
+			string(e.Rank),
+			string(e.Type),
+			e.Level,
+			e.HP,
+			e.Attack,
+			e.Floor,
+			e.Zone,
+			boolToInt(e.IsBoss || e.Type == models.EnemyBoss),
+			e.Biome,
+			e.Role,
+			boolToInt(e.IsTransition),
+			e.TargetWinRateMin,
+			e.TargetWinRateMax,
+		); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
 func (db *DB) GetEnemyByID(id int64) (*models.Enemy, error) {
 	var e models.Enemy
 	var isBoss int
+	var isTransition int
 	err := db.conn.QueryRow(
-		"SELECT id, name, description, rank, type, hp, attack, floor, zone, is_boss FROM enemies WHERE id = ?",
+		`SELECT id, name, description, rank, type, level, hp, attack, floor, zone, is_boss, biome, role, is_transition, target_winrate_min, target_winrate_max
+		 FROM enemies
+		 WHERE id = ?`,
 		id,
-	).Scan(&e.ID, &e.Name, &e.Description, &e.Rank, &e.Type, &e.HP, &e.Attack, &e.Floor, &e.Zone, &isBoss)
+	).Scan(
+		&e.ID,
+		&e.Name,
+		&e.Description,
+		&e.Rank,
+		&e.Type,
+		&e.Level,
+		&e.HP,
+		&e.Attack,
+		&e.Floor,
+		&e.Zone,
+		&isBoss,
+		&e.Biome,
+		&e.Role,
+		&isTransition,
+		&e.TargetWinRateMin,
+		&e.TargetWinRateMax,
+	)
 	if err != nil {
 		return nil, err
 	}
 	e.IsBoss = isBoss == 1
+	e.IsTransition = isTransition == 1
 	return &e, nil
 }
 
 func (db *DB) GetEnemiesByFloor(floor int) ([]models.Enemy, error) {
 	rows, err := db.conn.Query(
-		"SELECT id, name, description, rank, type, hp, attack, floor, zone, is_boss FROM enemies WHERE floor = ? ORDER BY id",
+		`SELECT id, name, description, rank, type, level, hp, attack, floor, zone, is_boss, biome, role, is_transition, target_winrate_min, target_winrate_max
+		 FROM enemies
+		 WHERE floor = ?
+		 ORDER BY id`,
 		floor,
 	)
 	if err != nil {
@@ -80,10 +232,29 @@ func (db *DB) GetEnemiesByFloor(floor int) ([]models.Enemy, error) {
 	for rows.Next() {
 		var e models.Enemy
 		var isBoss int
-		if err := rows.Scan(&e.ID, &e.Name, &e.Description, &e.Rank, &e.Type, &e.HP, &e.Attack, &e.Floor, &e.Zone, &isBoss); err != nil {
+		var isTransition int
+		if err := rows.Scan(
+			&e.ID,
+			&e.Name,
+			&e.Description,
+			&e.Rank,
+			&e.Type,
+			&e.Level,
+			&e.HP,
+			&e.Attack,
+			&e.Floor,
+			&e.Zone,
+			&isBoss,
+			&e.Biome,
+			&e.Role,
+			&isTransition,
+			&e.TargetWinRateMin,
+			&e.TargetWinRateMax,
+		); err != nil {
 			return nil, err
 		}
 		e.IsBoss = isBoss == 1
+		e.IsTransition = isTransition == 1
 		enemies = append(enemies, e)
 	}
 	return enemies, nil
@@ -102,15 +273,8 @@ func (db *DB) NormalizeEnemyZones() error {
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.Exec(`UPDATE enemies SET zone = CASE
-		WHEN UPPER(rank) IN ('E', 'D') THEN 1
-		WHEN UPPER(rank) IN ('C', 'B') THEN 2
-		ELSE 3
-	END`); err != nil {
-		return err
-	}
-
-	if _, err := tx.Exec(`UPDATE enemies SET is_boss = 0, type = ?`, string(models.EnemyRegular)); err != nil {
+	// Preserve seeded zones; only normalize boss flags/type consistency.
+	if _, err := tx.Exec(`UPDATE enemies SET type = CASE WHEN is_boss = 1 THEN ? ELSE ? END`, string(models.EnemyBoss), string(models.EnemyRegular)); err != nil {
 		return err
 	}
 
@@ -132,36 +296,70 @@ func (db *DB) NormalizeEnemyZones() error {
 	}
 
 	for _, zone := range zones {
-		var bossID int64
-		err := tx.QueryRow(`SELECT id
+		rows, err := tx.Query(`SELECT id
+			FROM enemies
+			WHERE zone = ? AND is_boss = 1
+			ORDER BY level DESC, (hp + attack) DESC, id ASC`, zone)
+		if err != nil {
+			return err
+		}
+		var bossIDs []int64
+		for rows.Next() {
+			var id int64
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return err
+			}
+			bossIDs = append(bossIDs, id)
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+
+		switch len(bossIDs) {
+		case 1:
+			if _, err := tx.Exec(`UPDATE enemies SET type = ? WHERE id = ?`, string(models.EnemyBoss), bossIDs[0]); err != nil {
+				return err
+			}
+			continue
+		case 0:
+			var bossID int64
+			err := tx.QueryRow(`SELECT id
 			FROM enemies
 			WHERE zone = ?
 			ORDER BY
-				CASE UPPER(rank)
-					WHEN 'S' THEN 6
-					WHEN 'A' THEN 5
-					WHEN 'B' THEN 4
-					WHEN 'C' THEN 3
-					WHEN 'D' THEN 2
-					ELSE 1
-				END DESC,
+				level DESC,
 				(hp + attack) DESC,
 				hp DESC,
 				attack DESC,
 				id ASC
 			LIMIT 1`, zone).Scan(&bossID)
-		if err == sql.ErrNoRows {
-			continue
-		}
-		if err != nil {
-			return err
-		}
-
-		if _, err := tx.Exec(
-			"UPDATE enemies SET is_boss = 1, type = ? WHERE id = ?",
-			string(models.EnemyBoss), bossID,
-		); err != nil {
-			return err
+			if err == sql.ErrNoRows {
+				continue
+			}
+			if err != nil {
+				return err
+			}
+			if _, err := tx.Exec(
+				"UPDATE enemies SET is_boss = 1, type = ? WHERE id = ?",
+				string(models.EnemyBoss), bossID,
+			); err != nil {
+				return err
+			}
+		default:
+			keep := bossIDs[0]
+			if _, err := tx.Exec(
+				"UPDATE enemies SET is_boss = 0, type = ? WHERE zone = ? AND id <> ? AND is_boss = 1",
+				string(models.EnemyRegular), zone, keep,
+			); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(
+				"UPDATE enemies SET is_boss = 1, type = ? WHERE id = ?",
+				string(models.EnemyBoss), keep,
+			); err != nil {
+				return err
+			}
 		}
 	}
 

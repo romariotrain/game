@@ -83,7 +83,7 @@ func FullReportWithEnemies(seed int64, enemies []EnemyDef) string {
 	sb.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
 
 	// Pick a mid-tier enemy for sweep testing
-	sweepEnemy := enemies[7] // Демон-маг (B rank, HP 280, ATK 24)
+	sweepEnemy := pickSweepEnemy(enemies)
 	sb.WriteString(fmt.Sprintf("  Target enemy: %s (Rank %s, HP %d, ATK %d)\n\n",
 		sweepEnemy.Name, sweepEnemy.Rank, sweepEnemy.HP, sweepEnemy.Attack))
 
@@ -155,27 +155,61 @@ func FullReportWithEnemies(seed int64, enemies []EnemyDef) string {
 		}
 	}
 
-	// ── 5. Balance Summary ───────────────────────────────────
+	// ── 5. Full-clear estimate ───────────────────────────────
 	sb.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
-	sb.WriteString("  5. BALANCE SUMMARY\n")
+	sb.WriteString("  5. FULL CLEAR ESTIMATE (all enemies defeated)\n")
+	sb.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
+
+	for _, arch := range DefaultArchetypes() {
+		cfg := SimConfig{
+			Days:      365,
+			Seed:      seed,
+			Archetype: arch,
+			Enemies:   enemies,
+		}
+		est := EstimateFullClear(cfg, 10)
+		if est.ReachedRuns == 0 {
+			sb.WriteString(fmt.Sprintf("  ▸ %s: not reached within %d days (0/%d runs)\n", arch.Name, cfg.Days, est.Runs))
+			continue
+		}
+		sb.WriteString(fmt.Sprintf("  ▸ %s: avg %.1f days (min %d, max %d), success %d/%d runs\n",
+			arch.Name, est.AvgDays, est.MinDays, est.MaxDays, est.ReachedRuns, est.Runs))
+	}
+	sb.WriteString("\n")
+
+	// ── 6. Balance Summary ───────────────────────────────────
+	sb.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	sb.WriteString("  6. BALANCE SUMMARY\n")
 	sb.WriteString("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
 
 	sb.WriteString("  Balance Criteria:\n")
-	sb.WriteString("    • Лёгкий враг: 45-60%\n")
-	sb.WriteString("    • Нормальный враг: 30-45%\n")
-	sb.WriteString("    • Сложный враг: 20-30%\n")
-	sb.WriteString("    • Элитка / мини-босс: 12-20%\n")
-	sb.WriteString("    • Босс зоны: 5-12%\n")
-	sb.WriteString("    • Переход зоны (первые 1-2 врага): 15-25%\n\n")
+	sb.WriteString("    • Slot 1: Переход 15-25%\n")
+	sb.WriteString("    • Slot 2: Переход/Элитка 12-20%\n")
+	sb.WriteString("    • Slot 3: Нормальный 30-45%\n")
+	sb.WriteString("    • Slot 4: Сложный 20-30%\n")
+	sb.WriteString("    • Slot 5: Лёгкий 45-60%\n")
+	sb.WriteString("    • Slot 6: Сложный 20-30%\n")
+	sb.WriteString("    • Slot 7: Элитка 12-20%\n")
+	sb.WriteString("    • Slot 8: Нормальный 30-45%\n")
+	sb.WriteString("    • Slot 9: Мини-босс 8-15%\n")
+	sb.WriteString("    • Slot 10: Босс зоны 5-12%\n\n")
 
-	for _, zone := range []int{1, 2, 3} {
+	maxSeenZone := maxZone(enemies)
+	for zone := 1; zone <= maxSeenZone; zone++ {
 		sb.WriteString(fmt.Sprintf("  ▸ Zone %d (enemy expected-level interpolation)\n", zone))
+		inRange := 0
+		outOfRange := 0
+		total := 0
 		for _, enemy := range enemies {
 			if enemy.Zone != zone {
 				continue
 			}
+			total++
 
 			evalLevel := EnemyMidExpectedLevel(enemy)
+			if IsZoneTransitionEnemy(enemy) {
+				evalLevel = TransitionEntryLevel(enemy)
+			}
 			stats := StatsFromLevel(evalLevel)
 			mc := MonteCarloAnalysis(
 				stats[0], stats[1], stats[2], stats[3],
@@ -196,10 +230,16 @@ func FullReportWithEnemies(seed int64, enemies []EnemyDef) string {
 			if IsZoneTransitionEnemy(enemy) {
 				extraTag = " [TRANSITION]"
 			}
+			if status == "✓ OK" {
+				inRange++
+			} else {
+				outOfRange++
+			}
 
-			sb.WriteString(fmt.Sprintf("    %-30s L%-2d  %7.1f%% (target %.0f-%.0f%%, %s) %s%s\n",
-				enemy.Name, evalLevel, mc.WinRate, targetLow, targetHigh, band.Label, status, extraTag))
+			sb.WriteString(fmt.Sprintf("    %-30s L%-2d  %7.1f%% (role %s, target %.0f-%.0f%%) %s%s\n",
+				enemy.Name, evalLevel, mc.WinRate, band.Label, targetLow, targetHigh, status, extraTag))
 		}
+		sb.WriteString(fmt.Sprintf("    Zone summary: in-target=%d/%d, misses=%d\n", inRange, total, outOfRange))
 		sb.WriteString("\n")
 	}
 
@@ -252,4 +292,16 @@ func getMilestones(days int) []int {
 		milestones = append(milestones, days-1)
 	}
 	return milestones
+}
+
+func pickSweepEnemy(enemies []EnemyDef) EnemyDef {
+	if len(enemies) == 0 {
+		return EnemyDef{}
+	}
+	for _, e := range enemies {
+		if e.Zone == 3 && e.Role == "NORMAL" {
+			return e
+		}
+	}
+	return enemies[len(enemies)/2]
 }
