@@ -133,7 +133,6 @@ type questDashboardData struct {
 	MainCompletedToday     int
 	LongTermCompletedToday int
 	ExpToday               int
-	AttemptsToday          int
 	Streak                 int
 	ActiveMission          *models.Quest
 }
@@ -218,8 +217,6 @@ func buildHunterLogPanel(data questDashboardData) fyne.CanvasObject {
 
 	progressTitle := components.MakeSystemLabel("СЕГОДНЯ", t.TextSecondary, components.TextHeadingSM)
 	expToday := components.MakeTitle(fmt.Sprintf("+%d EXP", data.ExpToday), t.Accent, components.TextHeadingLG)
-	attemptsToday := components.MakeLabel(fmt.Sprintf("+%d ATTEMPTS", data.AttemptsToday), t.Gold)
-	attemptsToday.TextSize = components.TextBodyMD
 
 	statsTitle := components.MakeSystemLabel("СТАТИСТИКА ЗАДАЧ", t.TextSecondary, components.TextHeadingSM)
 	statsBox := container.NewVBox(
@@ -240,7 +237,6 @@ func buildHunterLogPanel(data questDashboardData) fyne.CanvasObject {
 		makeVerticalGap(components.SpaceSM),
 		progressTitle,
 		expToday,
-		attemptsToday,
 		makeVerticalGap(16),
 		statsTitle,
 		statsBox,
@@ -273,7 +269,7 @@ func makeActiveMissionBlock(mission *models.Quest) fyne.CanvasObject {
 	category.TextSize = components.TextBodySM
 
 	reward := components.MakeLabel(
-		fmt.Sprintf("+%d EXP • +%d ATT", mission.Exp, models.AttemptsForQuestEXP(mission.Exp)),
+		fmt.Sprintf("+%d EXP", mission.Exp),
 		t.Accent,
 	)
 	reward.TextSize = components.TextBodySM
@@ -347,7 +343,6 @@ func collectQuestDashboardData(ctx *Context, quests []models.Quest) questDashboa
 			if q.CompletedAt == nil || q.CompletedAt.Format("2006-01-02") != today {
 				continue
 			}
-			data.AttemptsToday += models.AttemptsForQuestEXP(q.Exp)
 			switch classifyQuestJournal(q) {
 			case "daily":
 				data.DailyCompletedToday++
@@ -529,7 +524,7 @@ func buildQuestCardClassic(ctx *Context, q models.Quest) *fyne.Container {
 		t.TextSecondary,
 	)
 	rewardText := components.MakeLabel(
-		fmt.Sprintf("Награда: +%d EXP | Ранг: %s | +%d попыток", q.Exp, q.Rank, models.AttemptsForQuestEXP(q.Exp)),
+		fmt.Sprintf("Награда: +%d EXP | Ранг: %s", q.Exp, q.Rank),
 		t.Accent,
 	)
 
@@ -619,7 +614,6 @@ func buildQuestCardSystem(ctx *Context, q models.Quest) *fyne.Container {
 		Title:       q.Title,
 		MetaStat:    questStatCode(q.TargetStat),
 		EXP:         q.Exp,
-		Attempts:    models.AttemptsForQuestEXP(q.Exp),
 		Description: q.Description,
 		Tag:         tag,
 		Priority:    q.Rank == models.RankA || q.Rank == models.RankS,
@@ -639,9 +633,8 @@ func completeQuest(ctx *Context, q models.Quest) {
 		return
 	}
 
-	msg := fmt.Sprintf("Задание выполнено!\n\n+%d EXP к %s %s\n+%d попыток боя (всего: %d)",
-		result.EXPAwarded, result.StatType.Icon(), result.StatType.DisplayName(),
-		result.AttemptsAwarded, result.TotalAttempts)
+	msg := fmt.Sprintf("Задание выполнено!\n\n+%d EXP к %s %s",
+		result.EXPAwarded, result.StatType.Icon(), result.StatType.DisplayName())
 	if result.LeveledUp {
 		msg += fmt.Sprintf("\n\nУРОВЕНЬ ПОВЫШЕН! %s: %d -> %d",
 			result.StatType.DisplayName(), result.OldLevel, result.NewLevel)
@@ -716,7 +709,7 @@ func showCreateQuestDialog(ctx *Context) {
 		effort := parseIntWithDefault(effortSelect.Selected, 2)
 		friction := parseIntWithDefault(frictionSelect.Selected, 1)
 		exp := models.CalculateQuestEXP(minutes, effort, friction)
-		expLabel.Text = fmt.Sprintf("EXP: +%d | Ранг: %s | Попытки: +%d", exp, models.RankFromEXP(exp), models.AttemptsForQuestEXP(exp))
+		expLabel.Text = fmt.Sprintf("EXP: +%d | Ранг: %s", exp, models.RankFromEXP(exp))
 		expLabel.Refresh()
 	}
 	minutesEntry.OnChanged = func(string) { updatePreview() }

@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -303,19 +302,6 @@ func buildEnemyDayCard(ctx *Context) *fyne.Container {
 		}
 	}
 
-	quests, _ := ctx.Engine.DB.GetActiveQuests(ctx.Engine.Character.ID)
-	activities, _ := ctx.Engine.DB.GetDailyActivityLast30(ctx.Engine.Character.ID)
-	today := time.Now().Format("2006-01-02")
-	completedToday := 0
-	for _, a := range activities {
-		if a.Date == today {
-			completedToday = a.QuestsComplete
-			break
-		}
-	}
-
-	attempts := ctx.Engine.GetAttempts()
-
 	// Enemy title
 	enemyTitle := components.MakeSystemHeaderCompact("Следующий враг")
 
@@ -397,13 +383,8 @@ func buildEnemyDayCard(ctx *Context) *fyne.Container {
 	enemyInfo := container.NewVBox(append([]fyne.CanvasObject{nameRankRow}, infoItems...)...)
 	enemyHeader := container.NewHBox(enemyIconBox, enemyInfo)
 
-	// Attempts visual blocks
-	attemptsSection := buildAttemptsBlocks(attempts)
-
-	// Requirements / fight button
-	activeTotal := len(quests)
-	minQuestsForFight := 1
-	canFight := ctx.Features.Combat && attempts > 0 && enemy != nil
+	// Fight button
+	canFight := ctx.Features.Combat && enemy != nil
 
 	var ctaSection fyne.CanvasObject
 	if !ctx.Features.Combat {
@@ -412,17 +393,6 @@ func buildEnemyDayCard(ctx *Context) *fyne.Container {
 		ctaSection = hint
 	} else if enemy == nil {
 		hint := components.MakeLabel("Все враги побеждены", components.T().Gold)
-		hint.TextSize = 13
-		ctaSection = hint
-	} else if attempts <= 0 {
-		hint := components.MakeLabel("Нет попыток — выполни квест", components.T().Danger)
-		hint.TextSize = 13
-		ctaSection = hint
-	} else if completedToday < minQuestsForFight && activeTotal > 0 {
-		hint := components.MakeLabel(
-			fmt.Sprintf("Нужно выполнить %d заданий", minQuestsForFight),
-			components.T().Orange,
-		)
 		hint.TextSize = 13
 		ctaSection = hint
 	} else {
@@ -444,7 +414,6 @@ func buildEnemyDayCard(ctx *Context) *fyne.Container {
 		enemyTitle,
 		enemyHeader,
 		widget.NewSeparator(),
-		attemptsSection,
 		layout.NewSpacer(),
 		ctaSection,
 	)
@@ -520,36 +489,7 @@ func zoneBiomeName(zone int) string {
 }
 
 // =============================================================================
-// Attempts visual blocks (8 blocks in a row)
-// =============================================================================
-
-func buildAttemptsBlocks(attempts int) fyne.CanvasObject {
-	t := components.T()
-	label := components.MakeLabel(
-		fmt.Sprintf("Попытки %d/%d", attempts, models.MaxAttempts),
-		t.TextSecondary,
-	)
-	label.TextSize = components.TextBodySM
-
-	var blocks []fyne.CanvasObject
-	for i := 0; i < models.MaxAttempts; i++ {
-		block := canvas.NewRectangle(t.BGPanel)
-		if i < attempts {
-			block.FillColor = t.AccentDim
-		}
-		block.CornerRadius = components.RadiusSM
-		block.StrokeWidth = components.BorderThin
-		block.StrokeColor = t.Border
-		block.SetMinSize(fyne.NewSize(24, 14))
-		blocks = append(blocks, block)
-	}
-
-	row := container.NewHBox(blocks...)
-	return container.NewVBox(label, row)
-}
-
-// =============================================================================
-// Streak + Attempts Card
+// Streak Card
 // =============================================================================
 
 func buildStreakLine(ctx *Context) fyne.CanvasObject {
@@ -670,8 +610,8 @@ func buildTodayQuestCard(ctx *Context, q models.Quest) *fyne.Container {
 	}
 
 	statText := components.MakeLabel(
-		fmt.Sprintf("+%d EXP -> %s | Ранг: %s | +%d попыток",
-			q.Exp, q.TargetStat.DisplayName(), q.Rank, models.AttemptsForQuestEXP(q.Exp)),
+		fmt.Sprintf("+%d EXP -> %s | Ранг: %s",
+			q.Exp, q.TargetStat.DisplayName(), q.Rank),
 		components.T().TextSecondary,
 	)
 
@@ -682,9 +622,8 @@ func buildTodayQuestCard(ctx *Context, q models.Quest) *fyne.Container {
 			return
 		}
 
-		msg := fmt.Sprintf("+%d EXP к %s %s\n+%d попыток боя (всего: %d)",
-			result.EXPAwarded, result.StatType.Icon(), result.StatType.DisplayName(),
-			result.AttemptsAwarded, result.TotalAttempts)
+		msg := fmt.Sprintf("+%d EXP к %s %s",
+			result.EXPAwarded, result.StatType.Icon(), result.StatType.DisplayName())
 		if result.LeveledUp {
 			msg += fmt.Sprintf("\n\nУРОВЕНЬ ПОВЫШЕН! %s: %d -> %d",
 				result.StatType.DisplayName(), result.OldLevel, result.NewLevel)

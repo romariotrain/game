@@ -110,10 +110,6 @@ func markDefeated(t *testing.T, e *Engine, enemyID int64) {
 func TestTowerWinUnlocksNextEnemy(t *testing.T) {
 	e := newTestEngine(t)
 
-	if _, err := e.DB.AddAttempts(e.Character.ID, models.MaxAttempts); err != nil {
-		t.Fatalf("add attempts: %v", err)
-	}
-
 	current, err := e.GetCurrentEnemy()
 	if err != nil {
 		t.Fatalf("get current enemy: %v", err)
@@ -158,10 +154,6 @@ func TestTowerWinUnlocksNextEnemy(t *testing.T) {
 func TestTowerPreventsFarmingClearedEnemy(t *testing.T) {
 	e := newTestEngine(t)
 
-	if _, err := e.DB.AddAttempts(e.Character.ID, models.MaxAttempts); err != nil {
-		t.Fatalf("add attempts: %v", err)
-	}
-
 	current, err := e.GetCurrentEnemy()
 	if err != nil {
 		t.Fatalf("get current enemy: %v", err)
@@ -175,22 +167,14 @@ func TestTowerPreventsFarmingClearedEnemy(t *testing.T) {
 		t.Fatalf("finish battle: %v", err)
 	}
 
-	before := e.GetAttempts()
 	if _, err := e.StartBattle(firstEnemyID); err == nil {
 		t.Fatal("expected error when trying to farm a cleared enemy")
 	}
-	after := e.GetAttempts()
-	if after != before {
-		t.Fatalf("attempts changed on rejected battle: before=%d after=%d", before, after)
-	}
 }
 
-func TestTowerSpendsAttemptsOncePerBattle(t *testing.T) {
+func TestTowerStartBattleWithoutAttempts(t *testing.T) {
 	e := newTestEngine(t)
 
-	if _, err := e.DB.AddAttempts(e.Character.ID, 1); err != nil {
-		t.Fatalf("add attempts: %v", err)
-	}
 	current, err := e.GetCurrentEnemy()
 	if err != nil {
 		t.Fatalf("get current enemy: %v", err)
@@ -199,27 +183,27 @@ func TestTowerSpendsAttemptsOncePerBattle(t *testing.T) {
 		t.Fatal("expected current enemy")
 	}
 
-	if _, err := e.StartBattle(current.ID); err != nil {
-		t.Fatalf("start battle with one attempt: %v", err)
-	}
 	if got := e.GetAttempts(); got != 0 {
-		t.Fatalf("expected attempts to be 0 after spending one, got %d", got)
+		t.Fatalf("expected attempts to start at 0 in test, got %d", got)
 	}
 
-	if _, err := e.StartBattle(current.ID); err == nil {
-		t.Fatal("expected error when no attempts left")
+	if _, err := e.StartBattle(current.ID); err != nil {
+		t.Fatalf("start battle without attempts: %v", err)
 	}
 	if got := e.GetAttempts(); got != 0 {
-		t.Fatalf("attempts must not go negative, got %d", got)
+		t.Fatalf("battle should not consume attempts, got %d", got)
+	}
+
+	if _, err := e.StartBattle(current.ID); err != nil {
+		t.Fatalf("second start battle without attempts: %v", err)
+	}
+	if got := e.GetAttempts(); got != 0 {
+		t.Fatalf("attempts should remain unchanged, got %d", got)
 	}
 }
 
 func TestBattleDoesNotGrantEXP(t *testing.T) {
 	e := newTestEngine(t)
-
-	if _, err := e.DB.AddAttempts(e.Character.ID, 1); err != nil {
-		t.Fatalf("add attempts: %v", err)
-	}
 	current, err := e.GetCurrentEnemy()
 	if err != nil {
 		t.Fatalf("get current enemy: %v", err)

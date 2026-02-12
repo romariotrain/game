@@ -154,8 +154,7 @@ func (e *Engine) GetCurrentEnemy() (*models.Enemy, error) {
 	return e.GetNextEnemyForPlayer()
 }
 
-// CanFightCurrentEnemy checks if the provided enemy is the current target
-// and the player has at least one battle attempt.
+// CanFightCurrentEnemy checks if the provided enemy is the current target.
 func (e *Engine) CanFightCurrentEnemy(enemyID int64) (bool, error) {
 	current, err := e.GetNextEnemyForPlayer()
 	if err != nil {
@@ -164,7 +163,7 @@ func (e *Engine) CanFightCurrentEnemy(enemyID int64) (bool, error) {
 	if current == nil || current.ID != enemyID {
 		return false, nil
 	}
-	return e.GetAttempts() > 0, nil
+	return true, nil
 }
 
 func (e *Engine) validateCurrentEnemyForFight(enemyID int64) (*models.Enemy, error) {
@@ -182,13 +181,7 @@ func (e *Engine) validateCurrentEnemyForFight(enemyID int64) (*models.Enemy, err
 }
 
 func (e *Engine) spendBattleAttempt() error {
-	if err := e.DB.SpendAttempt(e.Character.ID); err != nil {
-		return fmt.Errorf("нет попыток для боя! Выполняйте задания, чтобы получить попытки")
-	}
-	attempts, err := e.DB.GetAttempts(e.Character.ID)
-	if err == nil {
-		e.Character.Attempts = attempts
-	}
+	// Battle attempts mechanic is disabled: fights are always available.
 	return nil
 }
 

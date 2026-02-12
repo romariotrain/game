@@ -20,7 +20,6 @@ type QuestCardSystemData struct {
 	Title       string
 	MetaStat    string
 	EXP         int
-	Attempts    int
 	Description string
 	Tag         string
 	Priority    bool
@@ -70,13 +69,9 @@ func MakeQuestCardSystem(data QuestCardSystemData, actions QuestCardSystemAction
 	metaStat.TextSize = TextBodySM
 	metaExp := canvas.NewText(fmt.Sprintf("+%d EXP", data.EXP), t.Accent)
 	metaExp.TextSize = TextBodySM
-	metaAtt := canvas.NewText(fmt.Sprintf("+%d ATT", data.Attempts), t.Accent2)
-	metaAtt.TextSize = TextBodySM
 	sep1 := canvas.NewText(" • ", t.TextMuted)
 	sep1.TextSize = TextBodySM
-	sep2 := canvas.NewText(" • ", t.TextMuted)
-	sep2.TextSize = TextBodySM
-	metaRow := container.NewHBox(metaStat, sep1, metaExp, sep2, metaAtt)
+	metaRow := container.NewHBox(metaStat, sep1, metaExp)
 
 	descText := strings.TrimSpace(data.Description)
 	bodyItems := []fyne.CanvasObject{headerRow, metaRow}

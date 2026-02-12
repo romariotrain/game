@@ -1324,14 +1324,6 @@ func buildBattleHPRow(name string, current, max int, fillColor color.Color) fyne
 	return container.NewVBox(label, bar)
 }
 
-func buildBattleAttemptsBox(attempts int) fyne.CanvasObject {
-	t := components.T()
-	label := components.MakeLabel(fmt.Sprintf("Попытки %d/%d", attempts, models.MaxAttempts), t.Text)
-	label.TextSize = components.TextHeadingSM
-	bar := makeBattleMiniHPBar(attempts, models.MaxAttempts, t.Accent)
-	return container.NewVBox(label, bar)
-}
-
 func makeBattleMiniHPBar(current, max int, fillColor color.Color) *fyne.Container {
 	t := components.T()
 	ratio := 0.0
