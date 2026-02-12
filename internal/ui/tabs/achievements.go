@@ -347,9 +347,12 @@ func buildEnemyPortrait(enemy models.DefeatedEnemy) fyne.CanvasObject {
 }
 
 func enemyPortraitPath(enemy models.DefeatedEnemy) string {
-	candidates := []string{
-		fmt.Sprintf("assets/enemies/enemy_%d.png", enemy.EnemyID),
-		fmt.Sprintf("assets/enemies/%s.png", enemyFileSlug(enemy.Name)),
+	candidates := []string{}
+	for _, ext := range []string{".jpg", ".jpeg", ".png"} {
+		candidates = append(candidates,
+			fmt.Sprintf("assets/enemies/enemy_%d%s", enemy.EnemyID, ext),
+			fmt.Sprintf("assets/enemies/%s%s", enemyFileSlug(enemy.Name), ext),
+		)
 	}
 
 	for _, candidate := range candidates {

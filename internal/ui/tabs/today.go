@@ -799,20 +799,24 @@ func makeTopCard(content fyne.CanvasObject, minSize fyne.Size) *fyne.Container {
 }
 
 func resolveEnemyImagePath(enemy models.Enemy) string {
-	legacyByFloor := fmt.Sprintf("floor_%d.png", enemy.Floor)
 	slugName := enemyImageSlug(enemy.Name)
-	candidates := []string{
-		filepath.Join("assets", "enemies", fmt.Sprintf("enemy_%d.png", enemy.ID)),
-		filepath.Join("assets", "enemies", slugName+".png"),
-		filepath.Join("assets", "enemies", legacyByFloor),
+	candidates := []string{}
+	for _, ext := range []string{".jpg", ".jpeg", ".png"} {
+		candidates = append(candidates,
+			filepath.Join("assets", "enemies", fmt.Sprintf("enemy_%d%s", enemy.ID, ext)),
+			filepath.Join("assets", "enemies", slugName+ext),
+			filepath.Join("assets", "enemies", fmt.Sprintf("floor_%d%s", enemy.Floor, ext)),
+		)
 	}
 	if exePath, err := os.Executable(); err == nil {
 		exeDir := filepath.Dir(exePath)
-		candidates = append(candidates,
-			filepath.Join(exeDir, "assets", "enemies", fmt.Sprintf("enemy_%d.png", enemy.ID)),
-			filepath.Join(exeDir, "assets", "enemies", slugName+".png"),
-			filepath.Join(exeDir, "assets", "enemies", legacyByFloor),
-		)
+		for _, ext := range []string{".jpg", ".jpeg", ".png"} {
+			candidates = append(candidates,
+				filepath.Join(exeDir, "assets", "enemies", fmt.Sprintf("enemy_%d%s", enemy.ID, ext)),
+				filepath.Join(exeDir, "assets", "enemies", slugName+ext),
+				filepath.Join(exeDir, "assets", "enemies", fmt.Sprintf("floor_%d%s", enemy.Floor, ext)),
+			)
+		}
 	}
 	for _, p := range candidates {
 		if info, err := os.Stat(p); err == nil && !info.IsDir() {
