@@ -8,10 +8,22 @@ import (
 	"solo-leveling/internal/config"
 	"solo-leveling/internal/database"
 	"solo-leveling/internal/game"
+	"solo-leveling/internal/sim"
 	"solo-leveling/internal/ui"
 )
 
 func main() {
+	// Headless simulation mode — no DB, no UI
+	if sim.RunCLIAutoTune() {
+		return
+	}
+	if sim.RunCLI() {
+		return
+	}
+	if sim.RunCLICompact() {
+		return
+	}
+
 	db, err := database.New()
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)

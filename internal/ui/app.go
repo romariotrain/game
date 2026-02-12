@@ -86,9 +86,47 @@ func (a *App) Run() {
 		},
 	}
 
+	if components.T().HeaderUppercase {
+		a.tabsCtx.QuestThemeMode = "System"
+	} else {
+		a.tabsCtx.QuestThemeMode = "Classic"
+	}
+
+	a.window.SetMainMenu(a.buildMainMenu())
+
 	content := a.buildMainLayout()
 	a.window.SetContent(content)
 	a.window.ShowAndRun()
+}
+
+func (a *App) buildMainMenu() *fyne.MainMenu {
+	systemTheme := fyne.NewMenuItem("Theme: System HUD", func() {
+		a.applyVisualTheme(true)
+	})
+	classicTheme := fyne.NewMenuItem("Theme: Classic", func() {
+		a.applyVisualTheme(false)
+	})
+	viewMenu := fyne.NewMenu("Вид", systemTheme, classicTheme)
+	return fyne.NewMainMenu(viewMenu)
+}
+
+func (a *App) applyVisualTheme(system bool) {
+	if system {
+		components.SetTheme(&components.SystemTheme)
+		if a.tabsCtx != nil {
+			a.tabsCtx.QuestThemeMode = "System"
+		}
+	} else {
+		components.SetTheme(&components.ClassicTheme)
+		if a.tabsCtx != nil {
+			a.tabsCtx.QuestThemeMode = "Classic"
+		}
+	}
+	components.SyncLegacyColors()
+	a.app.Settings().SetTheme(&SoloLevelingTheme{})
+	if a.window != nil {
+		a.window.SetContent(a.buildMainLayout())
+	}
 }
 
 func (a *App) buildMainLayout() fyne.CanvasObject {
@@ -122,16 +160,23 @@ func (a *App) buildMainLayout() fyne.CanvasObject {
 }
 
 func (a *App) buildHeader() *fyne.Container {
-	bg := canvas.NewRectangle(color.NRGBA{R: 15, G: 12, B: 30, A: 255})
-	bg.SetMinSize(fyne.NewSize(0, 56))
+	t := components.T()
+	bg := canvas.NewRectangle(t.BG)
+	bg.SetMinSize(fyne.NewSize(0, 52))
+	bg.StrokeWidth = components.BorderThin
+	bg.StrokeColor = t.Border
 
-	title := canvas.NewText("S O L O   L E V E L I N G", components.ColorAccentBright)
-	title.TextSize = 20
+	// Logo with letter spacing from theme
+	logoText := "S" + t.HeaderLetterGap + "O" + t.HeaderLetterGap + "L" + t.HeaderLetterGap + "O" +
+		"   " +
+		"L" + t.HeaderLetterGap + "E" + t.HeaderLetterGap + "V" + t.HeaderLetterGap + "E" + t.HeaderLetterGap + "L" + t.HeaderLetterGap + "I" + t.HeaderLetterGap + "N" + t.HeaderLetterGap + "G"
+	title := canvas.NewText(logoText, t.Accent)
+	title.TextSize = components.TextHeadingLG
 	title.TextStyle = fyne.TextStyle{Bold: true}
 	title.Alignment = fyne.TextAlignCenter
 
-	subtitle := canvas.NewText("Система Пробуждения Охотника", components.ColorTextDim)
-	subtitle.TextSize = 12
+	subtitle := canvas.NewText("Система Пробуждения Охотника", t.TextMuted)
+	subtitle.TextSize = components.TextBodySM
 	subtitle.Alignment = fyne.TextAlignCenter
 
 	headerContent := container.NewVBox(
@@ -156,7 +201,8 @@ func (a *App) refreshCharacterPanel() {
 }
 
 func (a *App) buildCharacterCard(level int, rank string, stats []models.StatLevel, completedDungeons []models.CompletedDungeon) *fyne.Container {
-	nameText := components.MakeTitle(a.engine.Character.Name, components.ColorGold, 24)
+	t := components.T()
+	nameText := components.MakeTitle(a.engine.Character.Name, t.Gold, 24)
 	editBtn := widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), func() {
 		entry := widget.NewEntry()
 		entry.SetText(a.engine.Character.Name)
@@ -177,11 +223,11 @@ func (a *App) buildCharacterCard(level int, rank string, stats []models.StatLeve
 	rankText.TextSize = 16
 	rankText.TextStyle = fyne.TextStyle{Bold: true}
 
-	levelText := components.MakeTitle(fmt.Sprintf("Общий уровень: %d", level), components.ColorText, 16)
+	levelText := components.MakeTitle(fmt.Sprintf("Общий уровень: %d", level), t.Text, 16)
 
 	var statSummary []fyne.CanvasObject
 	for _, s := range stats {
-		txt := components.MakeLabel(fmt.Sprintf("%s %s: %d", s.StatType.Icon(), s.StatType.DisplayName(), s.Level), components.ColorTextDim)
+		txt := components.MakeLabel(fmt.Sprintf("%s %s: %d", s.StatType.Icon(), s.StatType.DisplayName(), s.Level), t.TextSecondary)
 		statSummary = append(statSummary, txt)
 	}
 
@@ -192,9 +238,9 @@ func (a *App) buildCharacterCard(level int, rank string, stats []models.StatLeve
 
 	if len(completedDungeons) > 0 {
 		var titles []fyne.CanvasObject
-		titles = append(titles, components.MakeTitle("Титулы:", components.ColorGold, 13))
+		titles = append(titles, components.MakeTitle("Титулы:", t.Gold, components.TextHeadingSM))
 		for _, cd := range completedDungeons {
-			titles = append(titles, components.MakeLabel("  "+cd.EarnedTitle, components.ColorPurple))
+			titles = append(titles, components.MakeLabel("  "+cd.EarnedTitle, t.Purple))
 		}
 		contentItems = append(contentItems, widget.NewSeparator())
 		contentItems = append(contentItems, container.NewHBox(titles...))
@@ -246,7 +292,8 @@ func (a *App) refreshHistoryPanel() {
 
 	quests, err := a.engine.DB.GetCompletedQuests(a.engine.Character.ID, 50)
 	if err != nil {
-		a.historyPanel.Add(components.MakeLabel("Ошибка: "+err.Error(), components.ColorRed))
+		t := components.T()
+		a.historyPanel.Add(components.MakeLabel("Ошибка: "+err.Error(), t.Danger))
 		a.historyPanel.Refresh()
 		return
 	}
@@ -265,8 +312,9 @@ func (a *App) refreshHistoryPanel() {
 }
 
 func (a *App) buildHistoryCard(q models.Quest) *fyne.Container {
+	t := components.T()
 	rankBadge := components.MakeRankBadge(q.Rank)
-	titleText := components.MakeTitle(q.Title, components.ColorText, 14)
+	titleText := components.MakeTitle(q.Title, t.Text, 14)
 
 	completedStr := ""
 	if q.CompletedAt != nil {
@@ -275,21 +323,21 @@ func (a *App) buildHistoryCard(q models.Quest) *fyne.Container {
 
 	var typeIndicator fyne.CanvasObject
 	if q.IsDaily {
-		lbl := components.MakeLabel("Ежедневное", components.ColorBlue)
-		lbl.TextSize = 11
+		lbl := components.MakeLabel("Ежедневное", t.Blue)
+		lbl.TextSize = components.TextBodySM
 		typeIndicator = lbl
 	} else if q.DungeonID != nil {
-		lbl := components.MakeLabel("Данж", components.ColorPurple)
-		lbl.TextSize = 11
+		lbl := components.MakeLabel("Данж", t.Purple)
+		lbl.TextSize = components.TextBodySM
 		typeIndicator = lbl
 	} else {
 		typeIndicator = layout.NewSpacer()
 	}
 
-	dateText := components.MakeLabel(completedStr, components.ColorTextDim)
+	dateText := components.MakeLabel(completedStr, t.TextSecondary)
 	expText := components.MakeLabel(
 		fmt.Sprintf("+%d EXP -> %s %s | Ранг: %s", q.Exp, q.TargetStat.Icon(), q.TargetStat.DisplayName(), q.Rank),
-		components.ColorGreen,
+		t.Success,
 	)
 
 	topRow := container.NewHBox(rankBadge, titleText, typeIndicator, layout.NewSpacer(), dateText)
@@ -380,19 +428,22 @@ func (a *App) showBattleScreen() {
 
 	// --- VS panel builder ---
 	buildVSPanel := func() fyne.CanvasObject {
+		t := components.T()
 		// Player side
-		playerIcon := canvas.NewText("⚔️", components.ColorAccentBright)
+		playerIcon := canvas.NewText("⚔️", t.Accent)
 		playerIcon.TextSize = 40
 		playerIcon.Alignment = fyne.TextAlignCenter
-		playerIconBg := canvas.NewRectangle(color.NRGBA{R: 18, G: 18, B: 32, A: 255})
-		playerIconBg.CornerRadius = 10
+		playerIconBg := canvas.NewRectangle(t.BGPanel)
+		playerIconBg.CornerRadius = components.RadiusLG
 		playerIconBg.SetMinSize(fyne.NewSize(80, 80))
+		playerIconBg.StrokeWidth = components.BorderThin
+		playerIconBg.StrokeColor = t.Border
 		playerPortrait := container.NewStack(playerIconBg, container.NewCenter(playerIcon))
 
-		playerName := components.MakeTitle("Охотник", components.ColorText, 14)
-		playerHP := makeBattleMiniHPBar(state.PlayerHP, state.PlayerMaxHP, components.ColorGreen)
-		playerHPLabel := components.MakeLabel(fmt.Sprintf("HP: %d / %d", state.PlayerHP, state.PlayerMaxHP), components.ColorGreen)
-		playerHPLabel.TextSize = 11
+		playerName := components.MakeTitle("Охотник", t.Text, 14)
+		playerHP := makeBattleMiniHPBar(state.PlayerHP, state.PlayerMaxHP, t.Success)
+		playerHPLabel := components.MakeLabel(fmt.Sprintf("HP: %d / %d", state.PlayerHP, state.PlayerMaxHP), t.Success)
+		playerHPLabel.TextSize = components.TextBodySM
 		playerSide := container.NewVBox(
 			container.NewCenter(playerPortrait),
 			container.NewCenter(playerName),
@@ -401,29 +452,31 @@ func (a *App) showBattleScreen() {
 		)
 
 		// VS text
-		vsText := canvas.NewText("VS", components.ColorRed)
+		vsText := canvas.NewText("VS", t.Danger)
 		vsText.TextSize = 28
 		vsText.TextStyle = fyne.TextStyle{Bold: true}
 		vsText.Alignment = fyne.TextAlignCenter
-		roundText := components.MakeLabel(fmt.Sprintf("Раунд %d", state.Round), components.ColorGold)
-		roundText.TextSize = 13
+		roundText := components.MakeLabel(fmt.Sprintf("Раунд %d", state.Round), t.Gold)
+		roundText.TextSize = components.TextHeadingSM
 		roundText.Alignment = fyne.TextAlignCenter
 		vsSide := container.NewVBox(layout.NewSpacer(), container.NewCenter(vsText), container.NewCenter(roundText), layout.NewSpacer())
 
 		// Enemy side
-		enemyIcon := canvas.NewText("👹", components.ColorRed)
+		enemyIcon := canvas.NewText("👹", t.Danger)
 		enemyIcon.TextSize = 40
 		enemyIcon.Alignment = fyne.TextAlignCenter
-		enemyIconBg := canvas.NewRectangle(color.NRGBA{R: 32, G: 18, B: 18, A: 255})
-		enemyIconBg.CornerRadius = 10
+		enemyIconBg := canvas.NewRectangle(withAlpha(t.DangerDim, 40))
+		enemyIconBg.CornerRadius = components.RadiusLG
 		enemyIconBg.SetMinSize(fyne.NewSize(80, 80))
+		enemyIconBg.StrokeWidth = components.BorderThin
+		enemyIconBg.StrokeColor = withAlpha(t.Danger, 80)
 		enemyPortrait := container.NewStack(enemyIconBg, container.NewCenter(enemyIcon))
 
-		enemyName := components.MakeTitle(state.Enemy.Name, components.ColorText, 14)
+		enemyName := components.MakeTitle(state.Enemy.Name, t.Text, 14)
 		rankBadge := components.MakeRankBadge(state.Enemy.Rank)
-		enemyHP := makeBattleMiniHPBar(state.EnemyHP, state.EnemyMaxHP, components.ColorRed)
-		enemyHPLabel := components.MakeLabel(fmt.Sprintf("HP: %d / %d", state.EnemyHP, state.EnemyMaxHP), components.ColorRed)
-		enemyHPLabel.TextSize = 11
+		enemyHP := makeBattleMiniHPBar(state.EnemyHP, state.EnemyMaxHP, t.Danger)
+		enemyHPLabel := components.MakeLabel(fmt.Sprintf("HP: %d / %d", state.EnemyHP, state.EnemyMaxHP), t.Danger)
+		enemyHPLabel.TextSize = components.TextBodySM
 		enemySide := container.NewVBox(
 			container.NewCenter(enemyPortrait),
 			container.NewHBox(layout.NewSpacer(), enemyName, rankBadge, layout.NewSpacer()),
@@ -432,8 +485,10 @@ func (a *App) showBattleScreen() {
 		)
 
 		// Put VS panel together
-		bg := canvas.NewRectangle(color.NRGBA{R: 20, G: 18, B: 35, A: 255})
-		bg.CornerRadius = 12
+		bg := canvas.NewRectangle(t.BGPanel)
+		bg.CornerRadius = components.RadiusLG
+		bg.StrokeWidth = components.BorderThin
+		bg.StrokeColor = t.Border
 
 		vsGrid := container.NewGridWithColumns(3, playerSide, vsSide, enemySide)
 		return container.NewStack(bg, container.NewPadded(vsGrid))
@@ -441,17 +496,18 @@ func (a *App) showBattleScreen() {
 
 	// --- Round log builder ---
 	buildRoundLog := func() fyne.CanvasObject {
+		t := components.T()
 		roundLogBox = container.NewVBox()
 		if len(state.RoundLog) > 0 {
 			for _, line := range state.RoundLog {
-				clr := components.ColorTextDim
+				var clr color.Color = t.TextSecondary
 				if strings.Contains(line, "Крит") {
-					clr = components.ColorGold
+					clr = t.Gold
 				} else if strings.Contains(line, "Враг атакует") {
-					clr = components.ColorRed
+					clr = t.Danger
 				}
 				l := components.MakeLabel(line, clr)
-				l.TextSize = 11
+				l.TextSize = components.TextBodySM
 				roundLogBox.Add(l)
 			}
 		}
@@ -460,11 +516,12 @@ func (a *App) showBattleScreen() {
 
 	// --- Damage overlay animation ---
 	showDamageOverlay := func(parent *fyne.Container, dmg int, isCrit bool) {
+		t := components.T()
 		txt := fmt.Sprintf("-%d", dmg)
-		clr := components.ColorGreen
+		var clr color.Color = t.Success
 		if isCrit {
 			txt = fmt.Sprintf("⚡ КРИТ! -%d", dmg)
-			clr = components.ColorGold
+			clr = t.Gold
 		}
 		dmgOverlay = canvas.NewText(txt, clr)
 		dmgOverlay.TextSize = 20
@@ -483,6 +540,7 @@ func (a *App) showBattleScreen() {
 
 	// --- Stat bonus panel ---
 	buildStatBonusPanel := func() fyne.CanvasObject {
+		t := components.T()
 		stats, err := a.engine.GetStatLevels()
 		if err != nil {
 			return layout.NewSpacer()
@@ -504,14 +562,16 @@ func (a *App) showBattleScreen() {
 		damageMitigation := float64(sta) * 0.25
 
 		items := container.NewVBox(
-			components.MakeTitle("Твои бонусы", components.ColorAccentBright, 13),
-			components.MakeLabel(fmt.Sprintf("💪 STR %d → %d баз. урона", str, baseDamage), components.ColorText),
-			components.MakeLabel(fmt.Sprintf("⚡ AGI %d → %.0f%% крит", agi, critPct), components.ColorText),
-			components.MakeLabel(fmt.Sprintf("🧠 INT %d → -%d клеток, %d мс показа", intel, cellReduction, showMs), components.ColorText),
-			components.MakeLabel(fmt.Sprintf("🛡️ STA %d → %d HP, -%.1f вход. урона", sta, hpVal, damageMitigation), components.ColorText),
+			components.MakeTitle("Твои бонусы", t.Accent, components.TextHeadingSM),
+			components.MakeLabel(fmt.Sprintf("💪 STR %d → %d баз. урона", str, baseDamage), t.StatSTR),
+			components.MakeLabel(fmt.Sprintf("⚡ AGI %d → %.0f%% крит", agi, critPct), t.StatAGI),
+			components.MakeLabel(fmt.Sprintf("🧠 INT %d → -%d клеток, %d мс показа", intel, cellReduction, showMs), t.StatINT),
+			components.MakeLabel(fmt.Sprintf("🛡️ STA %d → %d HP, -%.1f вход. урона", sta, hpVal, damageMitigation), t.StatSTA),
 		)
-		bg := canvas.NewRectangle(color.NRGBA{R: 25, G: 22, B: 45, A: 255})
-		bg.CornerRadius = 8
+		bg := canvas.NewRectangle(t.BGCard)
+		bg.CornerRadius = components.RadiusMD
+		bg.StrokeWidth = components.BorderThin
+		bg.StrokeColor = t.Border
 		return container.NewStack(bg, container.NewPadded(items))
 	}
 
@@ -525,17 +585,18 @@ func (a *App) showBattleScreen() {
 		topRef.Add(buildVSPanel())
 
 		if state.BattleOver {
+			t := components.T()
 			var resultText string
 			var resultEmoji string
 			var resultColor color.Color
 			if state.Result == models.BattleWin {
 				resultText = "ПОБЕДА!"
 				resultEmoji = "🏆"
-				resultColor = components.ColorGold
+				resultColor = t.Gold
 			} else {
 				resultText = "ПОРАЖЕНИЕ"
 				resultEmoji = "💀"
-				resultColor = components.ColorRed
+				resultColor = t.Danger
 			}
 
 			if !resolved {
@@ -549,7 +610,7 @@ func (a *App) showBattleScreen() {
 			bigEmoji.Alignment = fyne.TextAlignCenter
 			bigTitle := components.MakeTitle(resultText, resultColor, 28)
 			bigTitle.Alignment = fyne.TextAlignCenter
-			subtitle := components.MakeLabel("Бои не дают EXP. Это испытание силы.", components.ColorTextDim)
+			subtitle := components.MakeLabel("Бои не дают EXP. Это испытание силы.", t.TextSecondary)
 			subtitle.Alignment = fyne.TextAlignCenter
 
 			resultContent := container.NewVBox(
@@ -561,27 +622,27 @@ func (a *App) showBattleScreen() {
 			// Stats
 			statsItems := []fyne.CanvasObject{}
 			if resolvedErr != nil {
-				statsItems = append(statsItems, components.MakeLabel("Ошибка: "+resolvedErr.Error(), components.ColorRed))
+				statsItems = append(statsItems, components.MakeLabel("Ошибка: "+resolvedErr.Error(), t.Danger))
 			} else if state.Result == models.BattleWin && resolvedRecord != nil {
 				if resolvedRecord.RewardTitle != "" {
-					statsItems = append(statsItems, components.MakeLabel("🏅 Титул: "+resolvedRecord.RewardTitle, components.ColorGold))
+					statsItems = append(statsItems, components.MakeLabel("🏅 Титул: "+resolvedRecord.RewardTitle, t.Gold))
 				}
 				if resolvedRecord.RewardBadge != "" {
-					statsItems = append(statsItems, components.MakeLabel("🎖️ Бейдж: "+resolvedRecord.RewardBadge, components.ColorGold))
+					statsItems = append(statsItems, components.MakeLabel("🎖️ Бейдж: "+resolvedRecord.RewardBadge, t.Gold))
 				}
 				if resolvedRecord.UnlockedEnemyName != "" {
-					statsItems = append(statsItems, components.MakeLabel("🔓 Открыт: "+resolvedRecord.UnlockedEnemyName, components.ColorAccentBright))
+					statsItems = append(statsItems, components.MakeLabel("🔓 Открыт: "+resolvedRecord.UnlockedEnemyName, t.Accent))
 				}
 			} else {
-				statsItems = append(statsItems, components.MakeLabel("Поражение не наказывается.", components.ColorTextDim))
+				statsItems = append(statsItems, components.MakeLabel("Поражение не наказывается.", t.TextSecondary))
 			}
 			if resolvedRecord != nil {
 				statsItems = append(statsItems,
-					components.MakeLabel(fmt.Sprintf("Точность: %.1f%%  |  Криты: %d  |  Раундов: %d", resolvedRecord.Accuracy, state.TotalCrits, state.Round), components.ColorTextDim),
-					components.MakeLabel(fmt.Sprintf("Урон нанесён: %d  |  Урон получен: %d", state.DamageDealt, state.DamageTaken), components.ColorTextDim),
+					components.MakeLabel(fmt.Sprintf("Точность: %.1f%%  |  Криты: %d  |  Раундов: %d", resolvedRecord.Accuracy, state.TotalCrits, state.Round), t.TextSecondary),
+					components.MakeLabel(fmt.Sprintf("Урон нанесён: %d  |  Урон получен: %d", state.DamageDealt, state.DamageTaken), t.TextSecondary),
 				)
 				if hint := battleStatHint(state, resolvedRecord); hint != "" {
-					statsItems = append(statsItems, components.MakeLabel("💡 Подсказка: "+hint, components.ColorAccentBright))
+					statsItems = append(statsItems, components.MakeLabel("💡 Подсказка: "+hint, t.Accent))
 				}
 			}
 
@@ -624,14 +685,14 @@ func (a *App) showBattleScreen() {
 			showDamageOverlay(topRef, state.LastRoundDamage, state.LastRoundCrit)
 		}
 
-		primaryStatus = components.MakeLabel("Запомни подсвеченные клетки", components.ColorGold)
-		primaryStatus.TextSize = 15
+		primaryStatus = components.MakeLabel("Запомни подсвеченные клетки", components.T().Gold)
+		primaryStatus.TextSize = components.TextBodyLG
 		primaryStatus.TextStyle = fyne.TextStyle{Bold: true}
 		secondaryStatus = components.MakeLabel(
 			fmt.Sprintf("Сетка %dx%d • Выбрано 0/%d", state.GridSize, state.GridSize, state.CellsToShow),
-			components.ColorTextDim,
+			components.T().TextSecondary,
 		)
-		secondaryStatus.TextSize = 12
+		secondaryStatus.TextSize = components.TextNumberSM
 
 		cellCount := state.GridSize * state.GridSize
 		cells = make([]*battleCell, cellCount)
@@ -665,22 +726,29 @@ func (a *App) showBattleScreen() {
 			secondaryStatus.Refresh()
 		}
 
+		refreshAllCells := func() {
+			for _, cell := range cells {
+				cell.Refresh()
+			}
+		}
+
 		showRoundResult := func() {
 			for i := 0; i < cellCount; i++ {
 				_, wasSelected := selected[i]
 				_, wasShown := shown[i]
 				switch {
 				case wasSelected && wasShown:
-					cells[i].SetState(battleCellStateResultCorrect)
+					cells[i].state = battleCellStateResultCorrect
 				case wasSelected && !wasShown:
-					cells[i].SetState(battleCellStateResultWrong)
+					cells[i].state = battleCellStateResultWrong
 				case wasShown:
-					cells[i].SetState(battleCellStateShown)
+					cells[i].state = battleCellStateShown
 				default:
-					cells[i].SetState(battleCellStateIdle)
+					cells[i].state = battleCellStateIdle
 				}
-				cells[i].Disable()
+				cells[i].disabled = true
 			}
+			refreshAllCells()
 		}
 
 		submitRound := func() {
@@ -695,7 +763,7 @@ func (a *App) showBattleScreen() {
 			showRoundResult()
 			accuracy := memory.ComputeAccuracy(state.ShownCells, choices)
 			primaryStatus.Text = fmt.Sprintf("Точность %.0f%% • расчёт урона...", accuracy*100)
-			primaryStatus.Color = components.ColorGold
+			primaryStatus.Color = components.T().Gold
 			primaryStatus.Refresh()
 
 			roundChoices := append([]int(nil), choices...)
@@ -723,8 +791,9 @@ func (a *App) showBattleScreen() {
 			choices = choices[:0]
 			selected = make(map[int]struct{}, state.CellsToShow)
 			for _, c := range cells {
-				c.SetState(battleCellStateIdle)
+				c.state = battleCellStateIdle
 			}
+			refreshAllCells()
 			updateSelectionStatus()
 			confirmBtn.Disable()
 		})
@@ -753,22 +822,23 @@ func (a *App) showBattleScreen() {
 			runOnMain(func() {
 				for _, idx := range state.ShownCells {
 					if idx >= 0 && idx < cellCount {
-						cells[idx].SetState(battleCellStateShown)
+						cells[idx].state = battleCellStateShown
 					}
 				}
+				refreshAllCells()
 			})
 
 			time.Sleep(time.Duration(showTimeMs) * time.Millisecond)
 
 			runOnMain(func() {
 				primaryStatus.Text = fmt.Sprintf("Выбери клетки: %d", state.CellsToShow)
-				primaryStatus.Color = components.ColorText
+				primaryStatus.Color = components.T().Text
 				primaryStatus.Refresh()
 
 				for i := 0; i < cellCount; i++ {
 					idx := i
-					cells[idx].SetState(battleCellStateIdle)
-					cells[idx].Enable()
+					cells[idx].state = battleCellStateIdle
+					cells[idx].disabled = false
 					cells[idx].SetOnTapped(func() {
 						if !acceptingInput || roundSubmitted {
 							return
@@ -789,6 +859,7 @@ func (a *App) showBattleScreen() {
 						confirmBtn.Enable()
 					})
 				}
+				refreshAllCells()
 
 				acceptingInput = true
 				resetBtn.Enable()
@@ -835,19 +906,22 @@ func (a *App) showBossScreen() {
 
 	// --- VS panel builder ---
 	buildBossVSPanel := func() fyne.CanvasObject {
+		t := components.T()
 		// Player side
-		playerIcon := canvas.NewText("⚔️", components.ColorAccentBright)
+		playerIcon := canvas.NewText("⚔️", t.Accent)
 		playerIcon.TextSize = 40
 		playerIcon.Alignment = fyne.TextAlignCenter
-		playerIconBg := canvas.NewRectangle(color.NRGBA{R: 18, G: 18, B: 32, A: 255})
-		playerIconBg.CornerRadius = 10
+		playerIconBg := canvas.NewRectangle(t.BGPanel)
+		playerIconBg.CornerRadius = components.RadiusLG
 		playerIconBg.SetMinSize(fyne.NewSize(80, 80))
+		playerIconBg.StrokeWidth = components.BorderThin
+		playerIconBg.StrokeColor = t.Border
 		playerPortrait := container.NewStack(playerIconBg, container.NewCenter(playerIcon))
 
-		playerName := components.MakeTitle("Охотник", components.ColorText, 14)
-		playerHP := makeBattleMiniHPBar(state.PlayerHP, state.PlayerMaxHP, components.ColorGreen)
-		playerHPLabel := components.MakeLabel(fmt.Sprintf("HP: %d / %d", state.PlayerHP, state.PlayerMaxHP), components.ColorGreen)
-		playerHPLabel.TextSize = 11
+		playerName := components.MakeTitle("Охотник", t.Text, 14)
+		playerHP := makeBattleMiniHPBar(state.PlayerHP, state.PlayerMaxHP, t.Success)
+		playerHPLabel := components.MakeLabel(fmt.Sprintf("HP: %d / %d", state.PlayerHP, state.PlayerMaxHP), t.Success)
+		playerHPLabel.TextSize = components.TextBodySM
 		playerSide := container.NewVBox(
 			container.NewCenter(playerPortrait),
 			container.NewCenter(playerName),
@@ -856,39 +930,39 @@ func (a *App) showBossScreen() {
 		)
 
 		// VS text
-		vsText := canvas.NewText("VS", components.ColorRed)
+		vsText := canvas.NewText("VS", t.Danger)
 		vsText.TextSize = 28
 		vsText.TextStyle = fyne.TextStyle{Bold: true}
 		vsText.Alignment = fyne.TextAlignCenter
-		phaseText := components.MakeLabel(phaseDisplay(state.Phase), components.ColorGold)
-		phaseText.TextSize = 13
+		phaseText := components.MakeLabel(phaseDisplay(state.Phase), t.Gold)
+		phaseText.TextSize = components.TextHeadingSM
 		phaseText.Alignment = fyne.TextAlignCenter
-		roundText := components.MakeLabel(fmt.Sprintf("Раунд %d", state.Round), components.ColorTextDim)
-		roundText.TextSize = 11
+		roundText := components.MakeLabel(fmt.Sprintf("Раунд %d", state.Round), t.TextSecondary)
+		roundText.TextSize = components.TextBodySM
 		roundText.Alignment = fyne.TextAlignCenter
 		vsSide := container.NewVBox(layout.NewSpacer(), container.NewCenter(vsText), container.NewCenter(phaseText), container.NewCenter(roundText), layout.NewSpacer())
 
 		// Enemy (boss) side
-		bossIcon := canvas.NewText("👑", components.ColorGold)
+		bossIcon := canvas.NewText("👑", t.Gold)
 		bossIcon.TextSize = 40
 		bossIcon.Alignment = fyne.TextAlignCenter
-		bossIconBg := canvas.NewRectangle(color.NRGBA{R: 40, G: 18, B: 18, A: 255})
-		bossIconBg.CornerRadius = 10
+		bossIconBg := canvas.NewRectangle(withAlpha(t.DangerDim, 40))
+		bossIconBg.CornerRadius = components.RadiusLG
 		bossIconBg.SetMinSize(fyne.NewSize(80, 80))
-		bossIconBg.StrokeWidth = 2
-		bossIconBg.StrokeColor = color.NRGBA{R: 180, G: 50, B: 50, A: 200}
+		bossIconBg.StrokeWidth = components.BorderThick
+		bossIconBg.StrokeColor = withAlpha(t.Danger, 200)
 		bossPortrait := container.NewStack(bossIconBg, container.NewCenter(bossIcon))
 
-		bossName := components.MakeTitle(state.Enemy.Name, components.ColorRed, 14)
+		bossName := components.MakeTitle(state.Enemy.Name, t.Danger, 14)
 		bossName.TextStyle = fyne.TextStyle{Bold: true}
 		rankBadge := components.MakeRankBadge(state.Enemy.Rank)
-		bossLabel := components.MakeLabel("BOSS", components.ColorRed)
+		bossLabel := components.MakeLabel("BOSS", t.Danger)
 		bossLabel.TextSize = 10
 		bossLabel.TextStyle = fyne.TextStyle{Bold: true}
 
-		enemyHP := makeBattleMiniHPBar(state.EnemyHP, state.EnemyMaxHP, components.ColorRed)
-		enemyHPLabel := components.MakeLabel(fmt.Sprintf("HP: %d / %d", state.EnemyHP, state.EnemyMaxHP), components.ColorRed)
-		enemyHPLabel.TextSize = 11
+		enemyHP := makeBattleMiniHPBar(state.EnemyHP, state.EnemyMaxHP, t.Danger)
+		enemyHPLabel := components.MakeLabel(fmt.Sprintf("HP: %d / %d", state.EnemyHP, state.EnemyMaxHP), t.Danger)
+		enemyHPLabel.TextSize = components.TextBodySM
 
 		enemySide := container.NewVBox(
 			container.NewCenter(bossPortrait),
@@ -897,10 +971,10 @@ func (a *App) showBossScreen() {
 			container.NewCenter(enemyHPLabel),
 		)
 
-		bg := canvas.NewRectangle(color.NRGBA{R: 20, G: 18, B: 35, A: 255})
-		bg.CornerRadius = 12
-		bg.StrokeWidth = 1
-		bg.StrokeColor = color.NRGBA{R: 120, G: 40, B: 40, A: 180}
+		bg := canvas.NewRectangle(t.BGPanel)
+		bg.CornerRadius = components.RadiusLG
+		bg.StrokeWidth = components.BorderMedium
+		bg.StrokeColor = withAlpha(t.Danger, 180)
 
 		vsGrid := container.NewGridWithColumns(3, playerSide, vsSide, enemySide)
 		return container.NewStack(bg, container.NewPadded(vsGrid))
@@ -908,17 +982,18 @@ func (a *App) showBossScreen() {
 
 	// --- Round log builder ---
 	buildBossRoundLog := func() fyne.CanvasObject {
+		t := components.T()
 		roundLogBox = container.NewVBox()
 		if len(state.RoundLog) > 0 {
 			for _, line := range state.RoundLog {
-				clr := components.ColorTextDim
+				var clr color.Color = t.TextSecondary
 				if strings.Contains(line, "Крит") {
-					clr = components.ColorGold
+					clr = t.Gold
 				} else if strings.Contains(line, "Враг атакует") {
-					clr = components.ColorRed
+					clr = t.Danger
 				}
 				l := components.MakeLabel(line, clr)
-				l.TextSize = 11
+				l.TextSize = components.TextBodySM
 				roundLogBox.Add(l)
 			}
 		}
@@ -935,17 +1010,18 @@ func (a *App) showBossScreen() {
 		topRef.Add(buildBossVSPanel())
 
 		if state.Phase == boss.PhaseWin || state.Phase == boss.PhaseLose {
+			t := components.T()
 			var resultText string
 			var resultEmoji string
 			var resultColor color.Color
 			if state.Phase == boss.PhaseWin {
 				resultText = "ПОБЕДА НАД БОССОМ!"
 				resultEmoji = "🏆"
-				resultColor = components.ColorGold
+				resultColor = t.Gold
 			} else {
 				resultText = "ПОРАЖЕНИЕ"
 				resultEmoji = "💀"
-				resultColor = components.ColorRed
+				resultColor = t.Danger
 			}
 
 			if !resolved {
@@ -962,7 +1038,7 @@ func (a *App) showBossScreen() {
 			bigEmoji.Alignment = fyne.TextAlignCenter
 			bigTitle := components.MakeTitle(resultText, resultColor, 28)
 			bigTitle.Alignment = fyne.TextAlignCenter
-			subtitle := components.MakeLabel("Бои не дают EXP. Это испытание силы.", components.ColorTextDim)
+			subtitle := components.MakeLabel("Бои не дают EXP. Это испытание силы.", t.TextSecondary)
 			subtitle.Alignment = fyne.TextAlignCenter
 
 			resultContent := container.NewVBox(
@@ -973,24 +1049,24 @@ func (a *App) showBossScreen() {
 
 			statsItems := []fyne.CanvasObject{}
 			if resolvedErr != nil {
-				statsItems = append(statsItems, components.MakeLabel("Ошибка: "+resolvedErr.Error(), components.ColorRed))
+				statsItems = append(statsItems, components.MakeLabel("Ошибка: "+resolvedErr.Error(), t.Danger))
 			} else if state.Phase == boss.PhaseWin && resolvedRecord != nil {
 				if resolvedRecord.RewardTitle != "" {
-					statsItems = append(statsItems, components.MakeLabel("🏅 Титул: "+resolvedRecord.RewardTitle, components.ColorGold))
+					statsItems = append(statsItems, components.MakeLabel("🏅 Титул: "+resolvedRecord.RewardTitle, t.Gold))
 				}
 				if resolvedRecord.RewardBadge != "" {
-					statsItems = append(statsItems, components.MakeLabel("🎖️ Бейдж: "+resolvedRecord.RewardBadge, components.ColorGold))
+					statsItems = append(statsItems, components.MakeLabel("🎖️ Бейдж: "+resolvedRecord.RewardBadge, t.Gold))
 				}
 				if resolvedRecord.UnlockedEnemyName != "" {
-					statsItems = append(statsItems, components.MakeLabel("🔓 Открыт: "+resolvedRecord.UnlockedEnemyName, components.ColorAccentBright))
+					statsItems = append(statsItems, components.MakeLabel("🔓 Открыт: "+resolvedRecord.UnlockedEnemyName, t.Accent))
 				}
 			} else {
-				statsItems = append(statsItems, components.MakeLabel("Поражение не наказывается.", components.ColorTextDim))
+				statsItems = append(statsItems, components.MakeLabel("Поражение не наказывается.", t.TextSecondary))
 			}
 			if resolvedRecord != nil {
 				statsItems = append(statsItems,
-					components.MakeLabel(fmt.Sprintf("Точность: %.1f%%  |  Криты: %d  |  Раундов: %d", resolvedRecord.Accuracy, state.TotalCrits, state.Round), components.ColorTextDim),
-					components.MakeLabel(fmt.Sprintf("Урон нанесён: %d  |  Урон получен: %d", state.DamageDealt, state.DamageTaken), components.ColorTextDim),
+					components.MakeLabel(fmt.Sprintf("Точность: %.1f%%  |  Криты: %d  |  Раундов: %d", resolvedRecord.Accuracy, state.TotalCrits, state.Round), t.TextSecondary),
+					components.MakeLabel(fmt.Sprintf("Урон нанесён: %d  |  Урон получен: %d", state.DamageDealt, state.DamageTaken), t.TextSecondary),
 				)
 			}
 
@@ -1028,14 +1104,14 @@ func (a *App) showBossScreen() {
 			acceptingInput := false
 			roundSubmitted := false
 
-			primaryStatus = components.MakeLabel("Запомни подсвеченные клетки", components.ColorGold)
-			primaryStatus.TextSize = 15
+			primaryStatus = components.MakeLabel("Запомни подсвеченные клетки", components.T().Gold)
+			primaryStatus.TextSize = components.TextBodyLG
 			primaryStatus.TextStyle = fyne.TextStyle{Bold: true}
 			secondaryStatus = components.MakeLabel(
 				fmt.Sprintf("Сетка %dx%d • Выбрано 0/%d", state.Memory.GridSize, state.Memory.GridSize, state.Memory.CellsToShow),
-				components.ColorTextDim,
+				components.T().TextSecondary,
 			)
-			secondaryStatus.TextSize = 12
+			secondaryStatus.TextSize = components.TextNumberSM
 
 			cellCount := state.Memory.GridSize * state.Memory.GridSize
 			cells = make([]*battleCell, cellCount)
@@ -1066,22 +1142,29 @@ func (a *App) showBossScreen() {
 				secondaryStatus.Refresh()
 			}
 
+			refreshAllCells := func() {
+				for _, cell := range cells {
+					cell.Refresh()
+				}
+			}
+
 			showRoundResult := func() {
 				for i := 0; i < cellCount; i++ {
 					_, wasSelected := selected[i]
 					_, wasShown := shown[i]
 					switch {
 					case wasSelected && wasShown:
-						cells[i].SetState(battleCellStateResultCorrect)
+						cells[i].state = battleCellStateResultCorrect
 					case wasSelected && !wasShown:
-						cells[i].SetState(battleCellStateResultWrong)
+						cells[i].state = battleCellStateResultWrong
 					case wasShown:
-						cells[i].SetState(battleCellStateShown)
+						cells[i].state = battleCellStateShown
 					default:
-						cells[i].SetState(battleCellStateIdle)
+						cells[i].state = battleCellStateIdle
 					}
-					cells[i].Disable()
+					cells[i].disabled = true
 				}
+				refreshAllCells()
 			}
 
 			submitRound := func() {
@@ -1096,7 +1179,7 @@ func (a *App) showBossScreen() {
 
 				accuracy := memory.ComputeAccuracy(state.Memory.ShownCells, choices)
 				primaryStatus.Text = fmt.Sprintf("Точность %.0f%% • расчёт урона...", accuracy*100)
-				primaryStatus.Color = components.ColorGold
+				primaryStatus.Color = components.T().Gold
 				primaryStatus.Refresh()
 
 				roundChoices := append([]int(nil), choices...)
@@ -1124,8 +1207,9 @@ func (a *App) showBossScreen() {
 				choices = choices[:0]
 				selected = make(map[int]struct{}, state.Memory.CellsToShow)
 				for _, c := range cells {
-					c.SetState(battleCellStateIdle)
+					c.state = battleCellStateIdle
 				}
+				refreshAllCells()
 				updateSelectionStatus()
 				confirmBtn.Disable()
 			})
@@ -1153,22 +1237,23 @@ func (a *App) showBossScreen() {
 				runOnMain(func() {
 					for _, idx := range state.Memory.ShownCells {
 						if idx >= 0 && idx < cellCount {
-							cells[idx].SetState(battleCellStateShown)
+							cells[idx].state = battleCellStateShown
 						}
 					}
+					refreshAllCells()
 				})
 
 				time.Sleep(time.Duration(showTimeMs) * time.Millisecond)
 
 				runOnMain(func() {
 					primaryStatus.Text = fmt.Sprintf("Выбери клетки: %d", state.Memory.CellsToShow)
-					primaryStatus.Color = components.ColorText
+					primaryStatus.Color = components.T().Text
 					primaryStatus.Refresh()
 
 					for i := 0; i < cellCount; i++ {
 						idx := i
-						cells[idx].SetState(battleCellStateIdle)
-						cells[idx].Enable()
+						cells[idx].state = battleCellStateIdle
+						cells[idx].disabled = false
 						cells[idx].SetOnTapped(func() {
 							if !acceptingInput || roundSubmitted {
 								return
@@ -1189,6 +1274,7 @@ func (a *App) showBossScreen() {
 							confirmBtn.Enable()
 						})
 					}
+					refreshAllCells()
 
 					acceptingInput = true
 					resetBtn.Enable()
@@ -1219,24 +1305,25 @@ func phaseDisplay(p boss.Phase) string {
 }
 
 func (a *App) buildBattleHistoryCard(b models.BattleRecord) *fyne.Container {
+	t := components.T()
 	var resultText string
 	var resultColor color.Color
 	if b.Result == models.BattleWin {
 		resultText = "Победа"
-		resultColor = components.ColorGreen
+		resultColor = t.Success
 	} else {
 		resultText = "Поражение"
-		resultColor = components.ColorRed
+		resultColor = t.Danger
 	}
 
-	nameText := components.MakeTitle(b.EnemyName, components.ColorText, 14)
+	nameText := components.MakeTitle(b.EnemyName, t.Text, 14)
 	result := components.MakeLabel(resultText, resultColor)
 	result.TextStyle = fyne.TextStyle{Bold: true}
-	dateText := components.MakeLabel(b.FoughtAt.Format("02.01.2006 15:04"), components.ColorTextDim)
+	dateText := components.MakeLabel(b.FoughtAt.Format("02.01.2006 15:04"), t.TextSecondary)
 
 	statsText := components.MakeLabel(
 		fmt.Sprintf("Урон: %d | Точность: %.0f%% | Криты: %d", b.DamageDealt, b.Accuracy, b.CriticalHits),
-		components.ColorTextDim,
+		t.TextSecondary,
 	)
 
 	topRow := container.NewHBox(nameText, result, layout.NewSpacer(), dateText)
@@ -1325,20 +1412,23 @@ func cellSizeForGrid(win fyne.Window, grid int) float32 {
 }
 
 func buildBattleHPRow(name string, current, max int, fillColor color.Color) fyne.CanvasObject {
-	label := components.MakeLabel(fmt.Sprintf("%s %d/%d", name, current, max), components.ColorText)
-	label.TextSize = 13
+	t := components.T()
+	label := components.MakeLabel(fmt.Sprintf("%s %d/%d", name, current, max), t.Text)
+	label.TextSize = components.TextHeadingSM
 	bar := makeBattleMiniHPBar(current, max, fillColor)
 	return container.NewVBox(label, bar)
 }
 
 func buildBattleAttemptsBox(attempts int) fyne.CanvasObject {
-	label := components.MakeLabel(fmt.Sprintf("Попытки %d/%d", attempts, models.MaxAttempts), components.ColorText)
-	label.TextSize = 13
-	bar := makeBattleMiniHPBar(attempts, models.MaxAttempts, components.ColorAccentBright)
+	t := components.T()
+	label := components.MakeLabel(fmt.Sprintf("Попытки %d/%d", attempts, models.MaxAttempts), t.Text)
+	label.TextSize = components.TextHeadingSM
+	bar := makeBattleMiniHPBar(attempts, models.MaxAttempts, t.Accent)
 	return container.NewVBox(label, bar)
 }
 
 func makeBattleMiniHPBar(current, max int, fillColor color.Color) *fyne.Container {
+	t := components.T()
 	ratio := 0.0
 	if max > 0 {
 		ratio = float64(current) / float64(max)
@@ -1350,14 +1440,14 @@ func makeBattleMiniHPBar(current, max int, fillColor color.Color) *fyne.Containe
 		ratio = 1
 	}
 
-	bg := canvas.NewRectangle(color.NRGBA{R: 24, G: 22, B: 40, A: 255})
-	bg.CornerRadius = 6
+	bg := canvas.NewRectangle(t.BGPanel)
+	bg.CornerRadius = components.RadiusMD
 	bg.SetMinSize(fyne.NewSize(180, 12))
-	bg.StrokeWidth = 1
-	bg.StrokeColor = color.NRGBA{R: 70, G: 64, B: 102, A: 180}
+	bg.StrokeWidth = components.BorderThin
+	bg.StrokeColor = t.BorderActive
 
 	fill := canvas.NewRectangle(fillColor)
-	fill.CornerRadius = 6
+	fill.CornerRadius = components.RadiusMD
 
 	return container.NewStack(
 		bg,
@@ -1511,6 +1601,8 @@ func (r *battleCellRenderer) BackgroundColor() color.Color {
 }
 
 func battleCellPalette(state battleCellState, disabled bool) (color.NRGBA, color.NRGBA, color.NRGBA) {
+	t := components.T()
+
 	type palette struct {
 		fill   color.NRGBA
 		border color.NRGBA
@@ -1518,29 +1610,29 @@ func battleCellPalette(state battleCellState, disabled bool) (color.NRGBA, color
 	}
 
 	idle := palette{
-		fill:   color.NRGBA{R: 38, G: 35, B: 58, A: 220},
-		border: color.NRGBA{R: 88, G: 82, B: 128, A: 220},
-		glow:   color.NRGBA{R: 0, G: 0, B: 0, A: 0},
+		fill:   withAlpha(t.BGCard, 220),
+		border: withAlpha(t.BorderActive, 220),
+		glow:   color.NRGBA{A: 0},
 	}
 	shown := palette{
-		fill:   color.NRGBA{R: 118, G: 94, B: 255, A: 235},
-		border: color.NRGBA{R: 170, G: 149, B: 255, A: 255},
-		glow:   color.NRGBA{R: 152, G: 128, B: 255, A: 170},
+		fill:   withAlpha(t.Accent, 60),
+		border: t.Accent,
+		glow:   t.AccentGlow,
 	}
 	selected := palette{
-		fill:   color.NRGBA{R: 82, G: 126, B: 228, A: 235},
-		border: color.NRGBA{R: 126, G: 165, B: 255, A: 255},
-		glow:   color.NRGBA{R: 110, G: 148, B: 255, A: 140},
+		fill:   withAlpha(t.Accent, 40),
+		border: withAlpha(t.Accent, 140),
+		glow:   color.NRGBA{A: 0},
 	}
 	resultCorrect := palette{
-		fill:   color.NRGBA{R: 44, G: 134, B: 86, A: 245},
-		border: color.NRGBA{R: 88, G: 214, B: 146, A: 255},
-		glow:   color.NRGBA{R: 88, G: 214, B: 146, A: 160},
+		fill:   withAlpha(t.Success, 80),
+		border: t.Success,
+		glow:   withAlpha(t.Success, 160),
 	}
 	resultWrong := palette{
-		fill:   color.NRGBA{R: 138, G: 46, B: 56, A: 245},
-		border: color.NRGBA{R: 214, G: 84, B: 96, A: 255},
-		glow:   color.NRGBA{R: 214, G: 84, B: 96, A: 160},
+		fill:   withAlpha(t.Danger, 80),
+		border: t.Danger,
+		glow:   withAlpha(t.Danger, 160),
 	}
 
 	current := idle
@@ -1562,6 +1654,10 @@ func battleCellPalette(state battleCellState, disabled bool) (color.NRGBA, color
 	}
 
 	return current.fill, current.border, current.glow
+}
+
+func withAlpha(c color.NRGBA, a uint8) color.NRGBA {
+	return color.NRGBA{R: c.R, G: c.G, B: c.B, A: a}
 }
 
 func dimAlpha(src uint8, delta uint8) uint8 {

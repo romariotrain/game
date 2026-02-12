@@ -115,11 +115,13 @@ func (e *Engine) FinishBoss(state *boss.State) (*models.BattleRecord, error) {
 		record.RewardTitle = title
 		record.RewardBadge = badge
 
-		nextName, err := e.unlockNextEnemy(state.Enemy.ID)
+		nextEnemy, err := e.GetNextEnemyForPlayer()
 		if err != nil {
 			return nil, err
 		}
-		record.UnlockedEnemyName = nextName
+		if nextEnemy != nil && nextEnemy.ID != state.Enemy.ID {
+			record.UnlockedEnemyName = nextEnemy.Name
+		}
 	}
 
 	if err := e.UnlockAchievement(AchievementFirstBattle); err != nil {

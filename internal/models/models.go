@@ -385,6 +385,8 @@ type Enemy struct {
 	HP          int
 	Attack      int
 	Floor       int
+	Zone        int
+	IsBoss      bool
 }
 
 // StreakTitle returns the title earned at a given streak milestone, or empty string.
@@ -500,4 +502,14 @@ type BattleReward struct {
 	Title     string
 	Badge     string
 	AwardedAt time.Time
+}
+
+type DefeatedEnemy struct {
+	EnemyID     int64
+	Name        string
+	Description string
+	Rank        QuestRank
+	Zone        int
+	IsBoss      bool
+	DefeatedAt  *time.Time
 }

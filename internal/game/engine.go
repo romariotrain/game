@@ -56,42 +56,42 @@ func GetPresetEnemies() []models.Enemy {
 	return []models.Enemy{
 		// === Floor 1-5: Novice ===
 		{Name: "Гоблин", Description: "Слабый, но хитрый монстр", Rank: models.RankE, Type: models.EnemyRegular,
-			HP: 80, Attack: 8, Floor: 1},
+			HP: 80, Attack: 8, Floor: 1, Zone: 1},
 		{Name: "Скелет-страж", Description: "Неупокоенный воин подземелья", Rank: models.RankE, Type: models.EnemyRegular,
-			HP: 90, Attack: 9, Floor: 2},
+			HP: 90, Attack: 9, Floor: 2, Zone: 1},
 		{Name: "Волк-тень", Description: "Быстрый хищник из тёмного мира", Rank: models.RankD, Type: models.EnemyRegular,
-			HP: 120, Attack: 12, Floor: 3},
+			HP: 120, Attack: 12, Floor: 3, Zone: 1},
 		{Name: "Каменный голем", Description: "Медленный, но невероятно прочный", Rank: models.RankD, Type: models.EnemyRegular,
-			HP: 150, Attack: 14, Floor: 4},
+			HP: 150, Attack: 14, Floor: 4, Zone: 1},
 		{Name: "Игрис — Рыцарь Крови", Description: "Легендарный рыцарь, верный страж данжа. Его клинок не знает пощады.",
-			Rank: models.RankC, Type: models.EnemyBoss,
-			HP: 300, Attack: 20, Floor: 5},
+			Rank: models.RankC, Type: models.EnemyRegular,
+			HP: 300, Attack: 20, Floor: 5, Zone: 2},
 
 		// === Floor 6-10: Seeker ===
 		{Name: "Тёмный рыцарь", Description: "Опытный воин, павший во тьму", Rank: models.RankC, Type: models.EnemyRegular,
-			HP: 200, Attack: 18, Floor: 6},
+			HP: 200, Attack: 18, Floor: 6, Zone: 2},
 		{Name: "Ядовитый виверн", Description: "Крылатый ящер с отравленным жалом", Rank: models.RankC, Type: models.EnemyRegular,
-			HP: 220, Attack: 20, Floor: 7},
+			HP: 220, Attack: 20, Floor: 7, Zone: 2},
 		{Name: "Демон-маг", Description: "Владеет разрушительной магией", Rank: models.RankB, Type: models.EnemyRegular,
-			HP: 280, Attack: 24, Floor: 8},
+			HP: 280, Attack: 24, Floor: 8, Zone: 2},
 		{Name: "Ледяной великан", Description: "Древний страж ледяных пещер", Rank: models.RankB, Type: models.EnemyRegular,
-			HP: 320, Attack: 26, Floor: 9},
+			HP: 320, Attack: 26, Floor: 9, Zone: 2},
 		{Name: "Барука — Король муравьёв", Description: "Монструозный повелитель насекомых. Его панцирь почти непробиваем.",
-			Rank: models.RankA, Type: models.EnemyBoss,
-			HP: 500, Attack: 32, Floor: 10},
+			Rank: models.RankA, Type: models.EnemyRegular,
+			HP: 500, Attack: 32, Floor: 10, Zone: 3},
 
 		// === Floor 11-15: Veteran ===
 		{Name: "Архидемон", Description: "Один из высших демонов, невероятная мощь", Rank: models.RankA, Type: models.EnemyRegular,
-			HP: 450, Attack: 30, Floor: 11},
+			HP: 450, Attack: 30, Floor: 11, Zone: 3},
 		{Name: "Драконид", Description: "Полудракон-получеловек, воин огня", Rank: models.RankA, Type: models.EnemyRegular,
-			HP: 500, Attack: 34, Floor: 12},
+			HP: 500, Attack: 34, Floor: 12, Zone: 3},
 		{Name: "Страж Бездны", Description: "Сущность из глубин тёмного измерения", Rank: models.RankS, Type: models.EnemyRegular,
-			HP: 600, Attack: 38, Floor: 13},
+			HP: 600, Attack: 38, Floor: 13, Zone: 3},
 		{Name: "Монарх Хаоса", Description: "Повелитель разрушения и безумия", Rank: models.RankS, Type: models.EnemyRegular,
-			HP: 700, Attack: 42, Floor: 14},
+			HP: 700, Attack: 42, Floor: 14, Zone: 3},
 		{Name: "Монарх Теней", Description: "Повелитель теней и смерти. Последнее испытание для сильнейших.",
-			Rank: models.RankS, Type: models.EnemyBoss,
-			HP: 1000, Attack: 50, Floor: 15},
+			Rank: models.RankS, Type: models.EnemyRegular,
+			HP: 1000, Attack: 50, Floor: 15, Zone: 3},
 	}
 }
 
@@ -108,16 +108,7 @@ func (e *Engine) InitEnemies() error {
 			}
 		}
 	}
-
-	// Ensure the first enemy is unlocked for the player
-	allEnemies, err := e.DB.GetAllEnemies()
-	if err != nil {
-		return err
-	}
-	if len(allEnemies) > 0 {
-		_ = e.DB.UnlockEnemy(e.Character.ID, allEnemies[0].ID)
-	}
-	return nil
+	return e.DB.NormalizeEnemyZones()
 }
 
 func (e *Engine) GetEnemies() ([]models.Enemy, error) {
@@ -125,18 +116,14 @@ func (e *Engine) GetEnemies() ([]models.Enemy, error) {
 	if err != nil {
 		return nil, err
 	}
-	unlocked, err := e.DB.GetUnlockedEnemyIDs(e.Character.ID)
+	currentZone, err := e.GetCurrentZone(e.Character.ID)
 	if err != nil {
 		return nil, err
-	}
-	if len(unlocked) == 0 && len(allEnemies) > 0 {
-		_ = e.DB.UnlockEnemy(e.Character.ID, allEnemies[0].ID)
-		unlocked[allEnemies[0].ID] = true
 	}
 
 	var available []models.Enemy
 	for _, en := range allEnemies {
-		if unlocked[en.ID] {
+		if en.Zone == currentZone {
 			available = append(available, en)
 		}
 	}
@@ -334,11 +321,13 @@ func (e *Engine) FinishBattle(state *models.BattleState) (*models.BattleRecord, 
 			record.RewardTitle = title
 			record.RewardBadge = badge
 
-			nextName, err := e.unlockNextEnemy(state.Enemy.ID)
+			nextEnemy, err := e.GetNextEnemyForPlayer()
 			if err != nil {
 				return nil, err
 			}
-			record.UnlockedEnemyName = nextName
+			if nextEnemy != nil && nextEnemy.ID != state.Enemy.ID {
+				record.UnlockedEnemyName = nextEnemy.Name
+			}
 		}
 		if err := e.UnlockAchievement(AchievementFirstBattle); err != nil {
 			return nil, err

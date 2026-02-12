@@ -3,6 +3,7 @@ package components
 import (
 	"fmt"
 	"image/color"
+	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -27,36 +28,44 @@ func MakeLabel(text string, clr color.Color) *canvas.Text {
 }
 
 func MakeSeparator() *canvas.Rectangle {
-	sep := canvas.NewRectangle(color.NRGBA{R: 60, G: 50, B: 120, A: 100})
-	sep.SetMinSize(fyne.NewSize(0, 2))
+	t := T()
+	sep := canvas.NewRectangle(t.Border)
+	sep.SetMinSize(fyne.NewSize(0, 1))
 	return sep
 }
 
+// MakeCard — legacy card (no border). For new code prefer MakeHUDPanel.
 func MakeCard(content fyne.CanvasObject) *fyne.Container {
-	bg := canvas.NewRectangle(ColorBGCard)
-	bg.CornerRadius = 8
+	t := T()
+	bg := canvas.NewRectangle(t.BGCard)
+	bg.CornerRadius = RadiusMD
 	return container.NewStack(bg, container.NewPadded(content))
 }
 
 // EXP Progress Bar - custom styled
 func MakeEXPBar(current, max int, barColor color.Color) *fyne.Container {
+	t := T()
 	ratio := float64(current) / float64(max)
 	if ratio > 1 {
 		ratio = 1
 	}
+	if ratio < 0 {
+		ratio = 0
+	}
 
-	bgBar := canvas.NewRectangle(color.NRGBA{R: 30, G: 30, B: 50, A: 255})
+	bgBar := canvas.NewRectangle(t.BGPanel)
 	bgBar.SetMinSize(fyne.NewSize(200, 16))
-	bgBar.CornerRadius = 4
+	bgBar.CornerRadius = RadiusSM
+	bgBar.StrokeWidth = BorderThin
+	bgBar.StrokeColor = t.Border
 
 	fillBar := canvas.NewRectangle(barColor)
-	fillBar.CornerRadius = 4
+	fillBar.CornerRadius = RadiusSM
 
-	expText := canvas.NewText(fmt.Sprintf("%d / %d", current, max), ColorText)
-	expText.TextSize = 11
+	expText := canvas.NewText(fmt.Sprintf("%d / %d", current, max), t.Text)
+	expText.TextSize = TextBodySM
 	expText.Alignment = fyne.TextAlignCenter
 
-	// Use a stack with the background and a container for the fill
 	barContainer := container.NewStack(
 		bgBar,
 		container.New(&progressLayout{ratio: ratio}, fillBar),
@@ -83,12 +92,13 @@ func (p *progressLayout) Layout(objects []fyne.CanvasObject, containerSize fyne.
 
 // Stat row widget
 func MakeStatRow(stat models.StatLevel) *fyne.Container {
-	icon := MakeLabel(stat.StatType.Icon(), ColorText)
-	name := MakeTitle(stat.StatType.DisplayName(), ColorText, 15)
-	levelText := MakeTitle(fmt.Sprintf("Ур. %d", stat.Level), ColorAccentBright, 15)
+	t := T()
+	icon := MakeLabel(stat.StatType.Icon(), t.Text)
+	name := MakeTitle(stat.StatType.DisplayName(), t.Text, TextHeadingMD)
+	levelText := MakeTitle(fmt.Sprintf("Ур. %d", stat.Level), t.Accent, TextHeadingMD)
 
 	required := models.ExpForLevel(stat.Level)
-	expBar := MakeEXPBar(stat.CurrentEXP, required, ColorAccent)
+	expBar := MakeEXPBar(stat.CurrentEXP, required, t.AccentDim)
 
 	left := container.NewHBox(icon, name, layout.NewSpacer(), levelText)
 	return container.NewVBox(left, expBar)
@@ -98,11 +108,11 @@ func MakeStatRow(stat models.StatLevel) *fyne.Container {
 func MakeRankBadge(rank models.QuestRank) *fyne.Container {
 	clr := ParseHexColor(rank.Color())
 	bg := canvas.NewRectangle(clr)
-	bg.CornerRadius = 4
+	bg.CornerRadius = RadiusSM
 	bg.SetMinSize(fyne.NewSize(32, 24))
 
 	text := canvas.NewText(string(rank), color.NRGBA{R: 255, G: 255, B: 255, A: 255})
-	text.TextSize = 13
+	text.TextSize = TextHeadingSM
 	text.TextStyle = fyne.TextStyle{Bold: true}
 	text.Alignment = fyne.TextAlignCenter
 
@@ -117,16 +127,36 @@ func ParseHexColor(hex string) color.NRGBA {
 	return color.NRGBA{R: r, G: g, B: b, A: 255}
 }
 
-// Section header
+// Section header — uses system style when CornerBrackets enabled.
 func MakeSectionHeader(title string) *fyne.Container {
-	t := MakeTitle(title, ColorAccentBright, 18)
+	t := T()
+	if t.CornerBrackets || t.HeaderUppercase {
+		return MakeSystemHeader(title)
+	}
+	// Classic style
+	titleText := MakeTitle(title, t.Accent, TextHeadingLG)
 	sep := MakeSeparator()
-	return container.NewVBox(t, sep)
+	return container.NewVBox(titleText, sep)
+}
+
+// MakeSystemLabel creates styled label matching system theme.
+// Uppercase if theme demands it.
+func MakeSystemLabel(text string, clr color.Color, size float32) *canvas.Text {
+	t := T()
+	display := text
+	if t.HeaderUppercase {
+		display = strings.ToUpper(text)
+	}
+	label := canvas.NewText(display, clr)
+	label.TextSize = size
+	label.TextStyle = fyne.TextStyle{Bold: true}
+	return label
 }
 
 // Empty state placeholder
 func MakeEmptyState(text string) *fyne.Container {
-	label := MakeLabel(text, ColorTextDim)
+	t := T()
+	label := MakeLabel(text, t.TextSecondary)
 	label.Alignment = fyne.TextAlignCenter
 	return container.NewCenter(label)
 }

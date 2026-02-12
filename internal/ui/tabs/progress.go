@@ -29,9 +29,10 @@ func RefreshProgress(ctx *Context) {
 	}
 	ctx.StatsPanel.Objects = nil
 
+	t := components.T()
 	stats, err := ctx.Engine.GetStatistics()
 	if err != nil {
-		ctx.StatsPanel.Add(components.MakeLabel("Ошибка: "+err.Error(), components.ColorRed))
+		ctx.StatsPanel.Add(components.MakeLabel("Ошибка: "+err.Error(), t.Danger))
 		ctx.StatsPanel.Refresh()
 		return
 	}
@@ -57,16 +58,17 @@ func RefreshProgress(ctx *Context) {
 }
 
 func buildOverallStatsCard(stats *models.Statistics) *fyne.Container {
-	header := components.MakeTitle("Общая статистика", components.ColorAccentBright, 16)
+	t := components.T()
+	header := components.MakeTitle("Общая статистика", t.Accent, components.TextHeadingMD)
 
-	totalCompleted := components.MakeLabel(fmt.Sprintf("Выполнено заданий: %d", stats.TotalQuestsCompleted), components.ColorText)
-	totalFailed := components.MakeLabel(fmt.Sprintf("Провалено заданий: %d", stats.TotalQuestsFailed), components.ColorText)
-	successRate := components.MakeLabel(fmt.Sprintf("Процент успеха: %.1f%%", stats.SuccessRate), components.ColorGreen)
-	totalEXP := components.MakeLabel(fmt.Sprintf("Всего EXP получено: %d", stats.TotalEXPEarned), components.ColorGold)
-	streak := components.MakeLabel(fmt.Sprintf("Текущий Streak: %d дней подряд", stats.CurrentStreak), components.ColorAccentBright)
+	totalCompleted := components.MakeLabel(fmt.Sprintf("Выполнено заданий: %d", stats.TotalQuestsCompleted), t.Text)
+	totalFailed := components.MakeLabel(fmt.Sprintf("Провалено заданий: %d", stats.TotalQuestsFailed), t.Text)
+	successRate := components.MakeLabel(fmt.Sprintf("Процент успеха: %.1f%%", stats.SuccessRate), t.Success)
+	totalEXP := components.MakeLabel(fmt.Sprintf("Всего EXP получено: %d", stats.TotalEXPEarned), t.Gold)
+	streak := components.MakeLabel(fmt.Sprintf("Текущий Streak: %d дней подряд", stats.CurrentStreak), t.Accent)
 	bestStat := components.MakeLabel(
 		fmt.Sprintf("Лучший стат: %s %s (Ур. %d)", stats.BestStat.Icon(), stats.BestStat.DisplayName(), stats.BestStatLevel),
-		components.ColorText,
+		t.Text,
 	)
 
 	content := container.NewVBox(header, widget.NewSeparator(), totalCompleted, totalFailed, successRate, totalEXP, streak, bestStat)
@@ -74,7 +76,8 @@ func buildOverallStatsCard(stats *models.Statistics) *fyne.Container {
 }
 
 func buildRankStatsCard(stats *models.Statistics) *fyne.Container {
-	header := components.MakeTitle("Задания по рангам", components.ColorAccentBright, 16)
+	t := components.T()
+	header := components.MakeTitle("Задания по рангам", t.Accent, components.TextHeadingMD)
 
 	var rows []fyne.CanvasObject
 	rows = append(rows, header, widget.NewSeparator())
@@ -91,19 +94,20 @@ func buildRankStatsCard(stats *models.Statistics) *fyne.Container {
 }
 
 func buildBattleStatsCard(stats *models.BattleStatistics) *fyne.Container {
-	header := components.MakeTitle("Боевая статистика", components.ColorAccentBright, 16)
+	t := components.T()
+	header := components.MakeTitle("Боевая статистика", t.Accent, components.TextHeadingMD)
 
 	var rows []fyne.CanvasObject
 	rows = append(rows, header, widget.NewSeparator())
-	rows = append(rows, components.MakeLabel(fmt.Sprintf("Всего боёв: %d", stats.TotalBattles), components.ColorText))
-	rows = append(rows, components.MakeLabel(fmt.Sprintf("Побед: %d / Поражений: %d", stats.Wins, stats.Losses), components.ColorText))
-	rows = append(rows, components.MakeLabel(fmt.Sprintf("Winrate: %.1f%%", stats.WinRate), components.ColorGreen))
-	rows = append(rows, components.MakeLabel(fmt.Sprintf("Общий урон: %d", stats.TotalDamage), components.ColorRed))
-	rows = append(rows, components.MakeLabel(fmt.Sprintf("Критов: %d / Уклонений: %d", stats.TotalCrits, stats.TotalDodges), components.ColorAccentBright))
+	rows = append(rows, components.MakeLabel(fmt.Sprintf("Всего боёв: %d", stats.TotalBattles), t.Text))
+	rows = append(rows, components.MakeLabel(fmt.Sprintf("Побед: %d / Поражений: %d", stats.Wins, stats.Losses), t.Text))
+	rows = append(rows, components.MakeLabel(fmt.Sprintf("Winrate: %.1f%%", stats.WinRate), t.Success))
+	rows = append(rows, components.MakeLabel(fmt.Sprintf("Общий урон: %d", stats.TotalDamage), t.Danger))
+	rows = append(rows, components.MakeLabel(fmt.Sprintf("Критов: %d / Уклонений: %d", stats.TotalCrits, stats.TotalDodges), t.Accent))
 
 	if len(stats.EnemiesDefeated) > 0 {
 		rows = append(rows, widget.NewSeparator())
-		rows = append(rows, components.MakeTitle("Побеждённые враги:", components.ColorText, 14))
+		rows = append(rows, components.MakeTitle("Побеждённые враги:", t.Text, 14))
 		var names []string
 		for name := range stats.EnemiesDefeated {
 			names = append(names, name)
@@ -111,7 +115,7 @@ func buildBattleStatsCard(stats *models.BattleStatistics) *fyne.Container {
 		sort.Strings(names)
 		for _, name := range names {
 			count := stats.EnemiesDefeated[name]
-			rows = append(rows, components.MakeLabel(fmt.Sprintf("  %s: %d раз", name, count), components.ColorTextDim))
+			rows = append(rows, components.MakeLabel(fmt.Sprintf("  %s: %d раз", name, count), t.TextSecondary))
 		}
 	}
 
@@ -120,11 +124,12 @@ func buildBattleStatsCard(stats *models.BattleStatistics) *fyne.Container {
 }
 
 func buildActivityChart(ctx *Context) *fyne.Container {
-	header := components.MakeTitle("Активность 30 дней", components.ColorAccentBright, 16)
+	t := components.T()
+	header := components.MakeTitle("Активность 30 дней", t.Accent, components.TextHeadingMD)
 
 	activities, err := ctx.Engine.DB.GetDailyActivityLast30(ctx.Engine.Character.ID)
 	if err != nil {
-		return components.MakeCard(components.MakeLabel("Ошибка загрузки активности", components.ColorRed))
+		return components.MakeCard(components.MakeLabel("Ошибка загрузки активности", t.Danger))
 	}
 
 	activityMap := make(map[string]models.DailyActivity)
@@ -142,19 +147,19 @@ func buildActivityChart(ctx *Context) *fyne.Container {
 
 		act, ok := activityMap[dateStr]
 		if !ok {
-			rows = append(rows, components.MakeLabel(fmt.Sprintf("  %s: нет данных", displayDate), components.ColorTextDim))
+			rows = append(rows, components.MakeLabel(fmt.Sprintf("  %s: нет данных", displayDate), t.TextSecondary))
 			continue
 		}
 
-		var barColor = components.ColorTextDim
+		var barColor = t.TextSecondary
 		if act.QuestsComplete > 0 {
 			intensity := act.QuestsComplete
 			if intensity >= 5 {
-				barColor = components.ColorGreen
+				barColor = t.Success
 			} else if intensity >= 3 {
-				barColor = components.ColorAccentBright
+				barColor = t.Accent
 			} else {
-				barColor = components.ColorText
+				barColor = t.Text
 			}
 		}
 
@@ -164,11 +169,11 @@ func buildActivityChart(ctx *Context) *fyne.Container {
 		bar.SetMinSize(fyne.NewSize(barWidth, barHeight))
 
 		row := container.NewHBox(
-			components.MakeLabel(displayDate, components.ColorTextDim),
+			components.MakeLabel(displayDate, t.TextSecondary),
 			bar,
 			components.MakeLabel(
 				fmt.Sprintf("  %d заданий, +%d EXP", act.QuestsComplete, act.EXPEarned),
-				components.ColorTextDim,
+				t.TextSecondary,
 			),
 		)
 		rows = append(rows, row)

@@ -2,20 +2,46 @@ package components
 
 import "image/color"
 
-// Color palette
+// Legacy color aliases — delegated to active theme tokens.
+// These are kept as var so existing code does not break.
+// New code should use T().Accent, T().Danger, etc. directly.
 var (
-	ColorBG           = color.NRGBA{R: 15, G: 15, B: 25, A: 255}
-	ColorBGSecondary  = color.NRGBA{R: 22, G: 22, B: 38, A: 255}
-	ColorBGCard       = color.NRGBA{R: 28, G: 28, B: 48, A: 255}
-	ColorAccent       = color.NRGBA{R: 100, G: 80, B: 220, A: 255}
-	ColorAccentBright = color.NRGBA{R: 130, G: 100, B: 255, A: 255}
-	ColorText         = color.NRGBA{R: 220, G: 220, B: 240, A: 255}
-	ColorTextDim      = color.NRGBA{R: 140, G: 140, B: 170, A: 255}
-	ColorGold         = color.NRGBA{R: 255, G: 215, B: 0, A: 255}
-	ColorRed          = color.NRGBA{R: 220, G: 50, B: 50, A: 255}
-	ColorGreen        = color.NRGBA{R: 50, G: 200, B: 80, A: 255}
-	ColorBlue         = color.NRGBA{R: 70, G: 130, B: 220, A: 255}
-	ColorPurple       = color.NRGBA{R: 155, G: 89, B: 182, A: 255}
-	ColorYellow       = color.NRGBA{R: 240, G: 200, B: 40, A: 255}
-	ColorOrange       = color.NRGBA{R: 230, G: 126, B: 34, A: 255}
+	ColorBG           color.NRGBA
+	ColorBGSecondary  color.NRGBA
+	ColorBGCard       color.NRGBA
+	ColorAccent       color.NRGBA
+	ColorAccentBright color.NRGBA
+	ColorText         color.NRGBA
+	ColorTextDim      color.NRGBA
+	ColorGold         color.NRGBA
+	ColorRed          color.NRGBA
+	ColorGreen        color.NRGBA
+	ColorBlue         color.NRGBA
+	ColorPurple       color.NRGBA
+	ColorYellow       color.NRGBA
+	ColorOrange       color.NRGBA
 )
+
+func init() {
+	SyncLegacyColors()
+}
+
+// SyncLegacyColors refreshes the legacy Color* vars from the active theme.
+// Call this after SetTheme() so all existing code picks up new colors.
+func SyncLegacyColors() {
+	t := T()
+	ColorBG = t.BG
+	ColorBGSecondary = t.BGPanel
+	ColorBGCard = t.BGCard
+	ColorAccent = t.AccentDim
+	ColorAccentBright = t.Accent
+	ColorText = t.Text
+	ColorTextDim = t.TextSecondary
+	ColorGold = t.Gold
+	ColorRed = t.Danger
+	ColorGreen = t.Success
+	ColorBlue = t.Blue
+	ColorPurple = t.Purple
+	ColorYellow = t.Warning
+	ColorOrange = t.Orange
+}

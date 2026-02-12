@@ -28,20 +28,22 @@ func RefreshDungeons(ctx *Context) {
 	}
 	ctx.DungeonsPanel.Objects = nil
 
+	t := components.T()
+
 	ctx.Engine.RefreshDungeonStatuses()
 
 	dungeons, err := ctx.Engine.DB.GetAllDungeons()
 	if err != nil {
-		ctx.DungeonsPanel.Add(components.MakeLabel("Ошибка: "+err.Error(), components.ColorRed))
+		ctx.DungeonsPanel.Add(components.MakeLabel("Ошибка: "+err.Error(), t.Danger))
 		ctx.DungeonsPanel.Refresh()
 		return
 	}
 
 	completedDungeons, _ := ctx.Engine.DB.GetCompletedDungeons(ctx.Engine.Character.ID)
 	if len(completedDungeons) > 0 {
-		ctx.DungeonsPanel.Add(components.MakeTitle("Пройденные данжи", components.ColorGold, 16))
+		ctx.DungeonsPanel.Add(components.MakeTitle("Пройденные данжи", t.Gold, components.TextHeadingMD))
 		for _, cd := range completedDungeons {
-			ctx.DungeonsPanel.Add(components.MakeLabel("  "+cd.EarnedTitle, components.ColorPurple))
+			ctx.DungeonsPanel.Add(components.MakeLabel("  "+cd.EarnedTitle, t.Purple))
 		}
 		ctx.DungeonsPanel.Add(widget.NewSeparator())
 	}
@@ -55,44 +57,45 @@ func RefreshDungeons(ctx *Context) {
 }
 
 func buildDungeonCard(ctx *Context, d models.Dungeon) *fyne.Container {
+	t := components.T()
 	statusIcon := ""
-	statusColor := components.ColorTextDim
+	var statusColor = t.TextSecondary
 	statusText := ""
 
 	switch d.Status {
 	case models.DungeonLocked:
 		statusIcon = "🔒"
-		statusColor = components.ColorTextDim
+		statusColor = t.TextSecondary
 		statusText = "Закрыт"
 	case models.DungeonAvailable:
 		statusIcon = "⚔️"
-		statusColor = components.ColorGreen
+		statusColor = t.Success
 		statusText = "Доступен"
 	case models.DungeonInProgress:
 		statusIcon = "⏳"
-		statusColor = components.ColorBlue
+		statusColor = t.Blue
 		statusText = "В процессе"
 	case models.DungeonCompleted:
 		statusIcon = "✅"
-		statusColor = components.ColorGold
+		statusColor = t.Gold
 		statusText = "Пройден"
 	}
 
-	nameText := components.MakeTitle(d.Name, components.ColorText, 16)
+	nameText := components.MakeTitle(d.Name, t.Text, components.TextHeadingMD)
 	statusBadge := components.MakeLabel(statusIcon+" "+statusText, statusColor)
 	statusBadge.TextStyle = fyne.TextStyle{Bold: true}
 
-	descText := components.MakeLabel(d.Description, components.ColorTextDim)
+	descText := components.MakeLabel(d.Description, t.TextSecondary)
 
 	var reqParts []string
 	for _, req := range d.Requirements {
 		reqParts = append(reqParts, fmt.Sprintf("%s %d", req.StatType.DisplayName(), req.MinLevel))
 	}
-	reqText := components.MakeLabel("Требования: "+strings.Join(reqParts, ", "), components.ColorTextDim)
+	reqText := components.MakeLabel("Требования: "+strings.Join(reqParts, ", "), t.TextSecondary)
 
 	rewardText := components.MakeLabel(
 		fmt.Sprintf("Награда: Титул '%s' + %d EXP", d.RewardTitle, d.RewardEXP),
-		components.ColorGold,
+		t.Gold,
 	)
 
 	contentItems := []fyne.CanvasObject{nameText, statusBadge, descText, reqText, rewardText}
@@ -100,8 +103,8 @@ func buildDungeonCard(ctx *Context, d models.Dungeon) *fyne.Container {
 	if d.Status == models.DungeonInProgress {
 		completed, total, err := ctx.Engine.GetDungeonProgress(d.ID)
 		if err == nil {
-			progressText := components.MakeLabel(fmt.Sprintf("Прогресс: %d / %d заданий", completed, total), components.ColorAccentBright)
-			progressBar := components.MakeEXPBar(completed, total, components.ColorAccentBright)
+			progressText := components.MakeLabel(fmt.Sprintf("Прогресс: %d / %d заданий", completed, total), t.Accent)
+			progressBar := components.MakeEXPBar(completed, total, t.Accent)
 			contentItems = append(contentItems, progressText, progressBar)
 		}
 
@@ -110,17 +113,17 @@ func buildDungeonCard(ctx *Context, d models.Dungeon) *fyne.Container {
 			contentItems = append(contentItems, widget.NewSeparator())
 			for _, q := range allQuests {
 				qStatus := ""
-				qColor := components.ColorText
+				var qColor = t.Text
 				switch q.Status {
 				case models.QuestCompleted:
 					qStatus = "[✓]"
-					qColor = components.ColorGreen
+					qColor = t.Success
 				case models.QuestActive:
 					qStatus = "[ ]"
-					qColor = components.ColorText
+					qColor = t.Text
 				default:
 					qStatus = "[X]"
-					qColor = components.ColorRed
+					qColor = t.Danger
 				}
 				ql := components.MakeLabel(fmt.Sprintf("  %s %s (%s)", qStatus, q.Title, string(q.Rank)), qColor)
 				contentItems = append(contentItems, ql)
@@ -129,11 +132,11 @@ func buildDungeonCard(ctx *Context, d models.Dungeon) *fyne.Container {
 	}
 
 	if d.Status == models.DungeonLocked || d.Status == models.DungeonAvailable {
-		contentItems = append(contentItems, components.MakeLabel(fmt.Sprintf("Заданий в данже: %d", len(d.QuestDefinitions)), components.ColorTextDim))
+		contentItems = append(contentItems, components.MakeLabel(fmt.Sprintf("Заданий в данже: %d", len(d.QuestDefinitions)), t.TextSecondary))
 		for _, qd := range d.QuestDefinitions {
 			ql := components.MakeLabel(
 				fmt.Sprintf("  - %s (Ранг %s, %s)", qd.Title, string(qd.Rank), qd.TargetStat.DisplayName()),
-				components.ColorTextDim,
+				t.TextSecondary,
 			)
 			contentItems = append(contentItems, ql)
 		}
@@ -159,7 +162,7 @@ func buildDungeonCard(ctx *Context, d models.Dungeon) *fyne.Container {
 	}
 
 	if d.Status == models.DungeonCompleted {
-		contentItems = append(contentItems, components.MakeLabel("Данж пройден!", components.ColorGold))
+		contentItems = append(contentItems, components.MakeLabel("Данж пройден!", t.Gold))
 	}
 
 	content := container.NewVBox(contentItems...)

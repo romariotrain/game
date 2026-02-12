@@ -40,7 +40,7 @@ func RefreshToday(ctx *Context) {
 	stats, err := ctx.Engine.GetStatLevels()
 	if err != nil {
 		ctx.CharacterPanel.Objects = []fyne.CanvasObject{
-			components.MakeLabel("Ошибка загрузки: "+err.Error(), components.ColorRed),
+			components.MakeLabel("Ошибка загрузки: "+err.Error(), components.T().Danger),
 		}
 		ctx.CharacterPanel.Refresh()
 		return
@@ -85,12 +85,16 @@ func RefreshToday(ctx *Context) {
 // =============================================================================
 
 func buildCharacterCard(ctx *Context, level int, rank string, stats []models.StatLevel) *fyne.Container {
-	// --- Portrait (large) ---
+	t := components.T()
+
+	// --- Portrait ---
 	const portraitW float32 = 256
 	const portraitH float32 = 316
-	portraitBg := canvas.NewRectangle(color.NRGBA{R: 18, G: 18, B: 32, A: 255})
-	portraitBg.CornerRadius = 10
+	portraitBg := canvas.NewRectangle(t.BGPanel)
+	portraitBg.CornerRadius = components.RadiusLG
 	portraitBg.SetMinSize(fyne.NewSize(portraitW, portraitH))
+	portraitBg.StrokeWidth = components.BorderThin
+	portraitBg.StrokeColor = t.Border
 
 	var portraitBox fyne.CanvasObject
 	if avatarPath := resolveAvatarPath(); avatarPath != "" {
@@ -111,18 +115,18 @@ func buildCharacterCard(ctx *Context, level int, rank string, stats []models.Sta
 	// Rank + level + EXP under portrait
 	rankColor := components.ParseHexColor(game.HunterRankColor(level))
 	rankLabel := canvas.NewText(rank, rankColor)
-	rankLabel.TextSize = 14
+	rankLabel.TextSize = components.TextHeadingMD
 	rankLabel.TextStyle = fyne.TextStyle{Bold: true}
 
-	levelLabel := canvas.NewText(fmt.Sprintf("Lv.%d", level), components.ColorTextDim)
-	levelLabel.TextSize = 12
+	levelLabel := canvas.NewText(fmt.Sprintf("Lv.%d", level), t.TextSecondary)
+	levelLabel.TextSize = components.TextBodyMD
 
 	totalEXP := 0
 	for _, stat := range stats {
 		totalEXP += stat.TotalEXP
 	}
-	expLabel := canvas.NewText(fmt.Sprintf("EXP %d", totalEXP), components.ColorTextDim)
-	expLabel.TextSize = 11
+	expLabel := canvas.NewText(fmt.Sprintf("EXP %d", totalEXP), t.TextMuted)
+	expLabel.TextSize = components.TextBodySM
 
 	metaRow := container.NewHBox(layout.NewSpacer(), rankLabel, levelLabel, expLabel, layout.NewSpacer())
 
@@ -139,27 +143,22 @@ func buildCharacterCard(ctx *Context, level int, rank string, stats []models.Sta
 		}
 		titleRow = sel
 	} else {
-		placeholder := canvas.NewText("Нет титулов", components.ColorTextDim)
-		placeholder.TextSize = 11
+		placeholder := canvas.NewText("Нет титулов", t.TextMuted)
+		placeholder.TextSize = components.TextBodySM
 		placeholder.Alignment = fyne.TextAlignCenter
 		titleRow = container.NewHBox(layout.NewSpacer(), placeholder, layout.NewSpacer())
 	}
 
-	// Left column: portrait + meta + title
 	leftCol := container.NewVBox(portraitBox, metaRow, titleRow)
 
-	// --- Right column: stats (stretch to fill) ---
+	// --- Right column: stats with colored left bars ---
 	statsBlock := buildStatBlockWithBars(stats)
-	rightCol := container.NewVBox(
-		components.MakeTitle("Характеристики", components.ColorAccentBright, 14),
-		widget.NewSeparator(),
-		statsBlock,
-	)
+	statsHeader := components.MakeSystemHeaderCompact("Характеристики")
+	rightCol := container.NewVBox(statsHeader, statsBlock)
 	rightColPadded := container.New(layout.NewCustomPaddedLayout(0, 0, 10, 0), rightCol)
 
-	// Layout: portrait fixed left, stats fill right
 	row := container.NewBorder(nil, nil, leftCol, nil, rightColPadded)
-	return makeTopCard(row, fyne.NewSize(0, 388))
+	return components.MakeHUDPanelSized(row, fyne.NewSize(0, 388))
 }
 
 // =============================================================================
@@ -167,17 +166,18 @@ func buildCharacterCard(ctx *Context, level int, rank string, stats []models.Sta
 // =============================================================================
 
 func statBarColor(statType models.StatType) color.Color {
+	t := components.T()
 	switch statType {
 	case models.StatStrength:
-		return color.NRGBA{R: 139, G: 32, B: 32, A: 255} // muted red
+		return t.StatSTR
 	case models.StatAgility:
-		return color.NRGBA{R: 139, G: 112, B: 32, A: 255} // muted yellow
+		return t.StatAGI
 	case models.StatIntellect:
-		return color.NRGBA{R: 26, G: 58, B: 107, A: 255} // muted blue
+		return t.StatINT
 	case models.StatEndurance:
-		return color.NRGBA{R: 26, G: 92, B: 42, A: 255} // muted green
+		return t.StatSTA
 	default:
-		return components.ColorAccent
+		return t.AccentDim
 	}
 }
 
@@ -228,11 +228,11 @@ func buildStatBlockWithBars(stats []models.StatLevel) fyne.CanvasObject {
 		icon := canvas.NewText(statIcon(statType), barColor)
 		icon.TextSize = 14
 
-		code := canvas.NewText(fmt.Sprintf("%s %d", statShortCode(statType), stat.Level), components.ColorText)
+		code := canvas.NewText(fmt.Sprintf("%s %d", statShortCode(statType), stat.Level), components.T().Text)
 		code.TextSize = 13
 		code.TextStyle = fyne.TextStyle{Bold: true}
 
-		expLabel := canvas.NewText(fmt.Sprintf("%d/%d", stat.CurrentEXP, expNeeded), components.ColorTextDim)
+		expLabel := canvas.NewText(fmt.Sprintf("%d/%d", stat.CurrentEXP, expNeeded), components.T().TextSecondary)
 		expLabel.TextSize = 11
 
 		headerRow := container.NewHBox(icon, code, layout.NewSpacer(), expLabel)
@@ -252,6 +252,7 @@ func buildStatBlockWithBars(stats []models.StatLevel) fyne.CanvasObject {
 }
 
 func makeColoredProgressBar(current, max int, barColor color.Color) fyne.CanvasObject {
+	t := components.T()
 	if max <= 0 {
 		max = 1
 	}
@@ -264,12 +265,14 @@ func makeColoredProgressBar(current, max int, barColor color.Color) fyne.CanvasO
 
 	ratio := float64(current) / float64(max)
 
-	bg := canvas.NewRectangle(color.NRGBA{R: 42, G: 42, B: 58, A: 255})
-	bg.CornerRadius = 4
+	bg := canvas.NewRectangle(t.BGPanel)
+	bg.CornerRadius = components.RadiusSM
 	bg.SetMinSize(fyne.NewSize(0, 10))
+	bg.StrokeWidth = components.BorderThin
+	bg.StrokeColor = t.Border
 
 	fill := canvas.NewRectangle(barColor)
-	fill.CornerRadius = 4
+	fill.CornerRadius = components.RadiusSM
 
 	return container.NewStack(
 		bg,
@@ -301,6 +304,7 @@ func buildEnemyDayCard(ctx *Context) *fyne.Container {
 	enemyRankText := "?"
 	enemyDesc := ""
 	var enemyAtk int
+	var enemyZone int
 	var enemy *models.Enemy
 
 	if ctx.Features.Combat {
@@ -311,6 +315,7 @@ func buildEnemyDayCard(ctx *Context) *fyne.Container {
 			enemyRankText = string(e.Rank)
 			enemyAtk = e.Attack
 			enemyDesc = e.Description
+			enemyZone = e.Zone
 		} else if err == nil && e == nil {
 			enemyName = "Все враги побеждены"
 			enemyRankText = "-"
@@ -331,17 +336,20 @@ func buildEnemyDayCard(ctx *Context) *fyne.Container {
 	attempts := ctx.Engine.GetAttempts()
 
 	// Enemy title
-	enemyTitle := components.MakeTitle("Следующий враг", components.ColorAccentBright, 16)
+	enemyTitle := components.MakeSystemHeaderCompact("Следующий враг")
 
 	// Enemy image — 200x200
 	const enemyImgSize float32 = 200
-	enemyIconBg := canvas.NewRectangle(color.NRGBA{R: 22, G: 22, B: 38, A: 255})
-	enemyIconBg.CornerRadius = 10
+	tk := components.T()
+	enemyIconBg := canvas.NewRectangle(tk.BGPanel)
+	enemyIconBg.CornerRadius = components.RadiusLG
 	enemyIconBg.SetMinSize(fyne.NewSize(enemyImgSize, enemyImgSize))
+	enemyIconBg.StrokeWidth = components.BorderThin
+	enemyIconBg.StrokeColor = tk.Border
 
 	var enemyIconBox fyne.CanvasObject
 	if enemy != nil {
-		if imgPath := resolveEnemyImagePath(enemy.Floor); imgPath != "" {
+		if imgPath := resolveEnemyImagePath(*enemy); imgPath != "" {
 			img := canvas.NewImageFromFile(imgPath)
 			img.FillMode = canvas.ImageFillContain
 			img.SetMinSize(fyne.NewSize(enemyImgSize, enemyImgSize))
@@ -356,21 +364,36 @@ func buildEnemyDayCard(ctx *Context) *fyne.Container {
 	}
 
 	// Enemy name + rank badge
-	enemyNameLabel := components.MakeTitle(enemyName, components.ColorText, 20)
+	enemyNameLabel := components.MakeTitle(enemyName, components.T().Text, 20)
 	enemyRankBadge := components.MakeRankBadge(models.QuestRank(enemyRankText))
-	nameRankRow := container.NewHBox(enemyRankBadge, enemyNameLabel)
+	nameItems := []fyne.CanvasObject{enemyRankBadge, enemyNameLabel}
+	if enemy != nil && (enemy.IsBoss || enemy.Type == models.EnemyBoss) {
+		bossLabel := canvas.NewText("BOSS", components.T().Danger)
+		bossLabel.TextSize = 11
+		bossLabel.TextStyle = fyne.TextStyle{Bold: true}
+		nameItems = append(nameItems, bossLabel)
+	}
+	nameRankRow := container.NewHBox(nameItems...)
 
 	// Description + attack
 	var infoItems []fyne.CanvasObject
+	if enemy != nil {
+		zoneLabel := components.MakeLabel(
+			fmt.Sprintf("Zone %d · %s", enemyZone, zoneBiomeName(enemyZone)),
+			components.T().Accent,
+		)
+		zoneLabel.TextSize = 12
+		infoItems = append(infoItems, zoneLabel)
+	}
 	if enemyDesc != "" {
-		descLabel := components.MakeLabel(enemyDesc, components.ColorTextDim)
+		descLabel := components.MakeLabel(enemyDesc, components.T().TextSecondary)
 		descLabel.TextSize = 12
 		infoItems = append(infoItems, descLabel)
 	}
 	if enemy != nil {
 		statsLabel := components.MakeLabel(
 			fmt.Sprintf("HP %d  ATK %d  Ранг %s", enemy.HP, enemyAtk, enemyRankText),
-			components.ColorTextDim,
+			components.T().TextSecondary,
 		)
 		statsLabel.TextSize = 12
 		infoItems = append(infoItems, statsLabel)
@@ -401,21 +424,21 @@ func buildEnemyDayCard(ctx *Context) *fyne.Container {
 
 	var ctaSection fyne.CanvasObject
 	if !ctx.Features.Combat {
-		hint := components.MakeLabel("Бой отключён", components.ColorTextDim)
+		hint := components.MakeLabel("Бой отключён", components.T().TextSecondary)
 		hint.TextSize = 12
 		ctaSection = hint
 	} else if enemy == nil {
-		hint := components.MakeLabel("Все враги побеждены", components.ColorGold)
+		hint := components.MakeLabel("Все враги побеждены", components.T().Gold)
 		hint.TextSize = 13
 		ctaSection = hint
 	} else if attempts <= 0 {
-		hint := components.MakeLabel("Нет попыток — выполни квест", components.ColorRed)
+		hint := components.MakeLabel("Нет попыток — выполни квест", components.T().Danger)
 		hint.TextSize = 13
 		ctaSection = hint
 	} else if completedToday < minQuestsForFight && activeTotal > 0 {
 		hint := components.MakeLabel(
 			fmt.Sprintf("Нужно выполнить %d заданий", minQuestsForFight),
-			components.ColorOrange,
+			components.T().Orange,
 		)
 		hint.TextSize = 13
 		ctaSection = hint
@@ -443,7 +466,11 @@ func buildEnemyDayCard(ctx *Context) *fyne.Container {
 		ctaSection,
 	)
 
-	return makeTopCard(content, fyne.NewSize(0, 320))
+	// Enemy card: HUD panel with accent border for boss
+	if enemy != nil && (enemy.IsBoss || enemy.Type == models.EnemyBoss) {
+		return components.MakeHUDPanelAccent(content, tk.Danger)
+	}
+	return components.MakeHUDPanelSized(content, fyne.NewSize(0, 320))
 }
 
 // buildDifficultySection compares player stats to enemy floor to show difficulty.
@@ -455,33 +482,34 @@ func buildDifficultySection(ctx *Context, enemy *models.Enemy) fyne.CanvasObject
 	expectedLevel := enemy.Floor * 3
 	diff := overallLevel - expectedLevel
 
+	dt := components.T()
 	var diffRatio float64
 	var diffColor color.Color
 	var diffText string
 	switch {
 	case diff >= 3:
 		diffRatio = 0.2
-		diffColor = color.NRGBA{R: 26, G: 92, B: 42, A: 255} // muted green
+		diffColor = dt.SuccessDim
 		diffText = "Легко"
 	case diff >= -2:
 		diffRatio = 0.5
-		diffColor = color.NRGBA{R: 139, G: 112, B: 32, A: 255} // muted yellow
+		diffColor = dt.Warning
 		diffText = "В самый раз"
 	default:
 		diffRatio = 0.85
-		diffColor = color.NRGBA{R: 139, G: 32, B: 32, A: 255} // muted red
+		diffColor = dt.DangerDim
 		diffText = "Сложно"
 	}
 
-	label := components.MakeLabel("Сложность", components.ColorTextDim)
+	label := components.MakeLabel("Сложность", components.T().TextSecondary)
 	label.TextSize = 11
 
 	diffLabel := canvas.NewText(diffText, diffColor)
 	diffLabel.TextSize = 11
 	diffLabel.TextStyle = fyne.TextStyle{Bold: true}
 
-	barBg := canvas.NewRectangle(color.NRGBA{R: 42, G: 42, B: 58, A: 255})
-	barBg.CornerRadius = 3
+	barBg := canvas.NewRectangle(dt.BGPanel)
+	barBg.CornerRadius = components.RadiusSM
 	barBg.SetMinSize(fyne.NewSize(0, 8))
 	barFill := canvas.NewRectangle(diffColor)
 	barFill.CornerRadius = 3
@@ -496,7 +524,7 @@ func buildFirstWinReward(ctx *Context, enemy *models.Enemy) fyne.CanvasObject {
 	reward, err := ctx.Engine.DB.GetBattleReward(ctx.Engine.Character.ID, enemy.ID)
 	if err == nil && reward != nil {
 		// Already defeated
-		defeated := canvas.NewText("✓ Побеждён", components.ColorGreen)
+		defeated := canvas.NewText("✓ Побеждён", components.T().Success)
 		defeated.TextSize = 12
 		defeated.TextStyle = fyne.TextStyle{Bold: true}
 		return container.NewHBox(defeated)
@@ -505,16 +533,16 @@ func buildFirstWinReward(ctx *Context, enemy *models.Enemy) fyne.CanvasObject {
 	// Not yet defeated — show expected rewards
 	title := fmt.Sprintf("Покоритель: %s", enemy.Name)
 	badge := fmt.Sprintf("Знак: %s", enemy.Name)
-	icon := canvas.NewText("🏆", components.ColorGold)
+	icon := canvas.NewText("🏆", components.T().Gold)
 	icon.TextSize = 12
-	label := components.MakeLabel("Первая победа:", components.ColorTextDim)
+	label := components.MakeLabel("Первая победа:", components.T().TextSecondary)
 	label.TextSize = 11
-	titleLabel := canvas.NewText(title, components.ColorGold)
+	titleLabel := canvas.NewText(title, components.T().Gold)
 	titleLabel.TextSize = 11
 	titleLabel.TextStyle = fyne.TextStyle{Bold: true}
-	badgeLabel := components.MakeLabel(badge, components.ColorGold)
+	badgeLabel := components.MakeLabel(badge, components.T().Gold)
 	badgeLabel.TextSize = 11
-	unlockLabel := components.MakeLabel("Открывает следующего врага", components.ColorAccentBright)
+	unlockLabel := components.MakeLabel("Продвигает прогресс зоны", components.T().Accent)
 	unlockLabel.TextSize = 11
 
 	return container.NewVBox(
@@ -525,24 +553,40 @@ func buildFirstWinReward(ctx *Context, enemy *models.Enemy) fyne.CanvasObject {
 	)
 }
 
+func zoneBiomeName(zone int) string {
+	switch zone {
+	case 1:
+		return "Forgotten Ruins"
+	case 2:
+		return "Abyss Corridors"
+	case 3:
+		return "Monarch Domain"
+	default:
+		return "Unknown Zone"
+	}
+}
+
 // =============================================================================
 // Attempts visual blocks (8 blocks in a row)
 // =============================================================================
 
 func buildAttemptsBlocks(attempts int) fyne.CanvasObject {
+	t := components.T()
 	label := components.MakeLabel(
 		fmt.Sprintf("Попытки %d/%d", attempts, models.MaxAttempts),
-		components.ColorTextDim,
+		t.TextSecondary,
 	)
-	label.TextSize = 11
+	label.TextSize = components.TextBodySM
 
 	var blocks []fyne.CanvasObject
 	for i := 0; i < models.MaxAttempts; i++ {
-		block := canvas.NewRectangle(color.NRGBA{R: 42, G: 42, B: 58, A: 255}) // dark grey empty
+		block := canvas.NewRectangle(t.BGPanel)
 		if i < attempts {
-			block.FillColor = color.NRGBA{R: 74, G: 53, B: 128, A: 255} // muted purple #4A3580
+			block.FillColor = t.AccentDim
 		}
-		block.CornerRadius = 3
+		block.CornerRadius = components.RadiusSM
+		block.StrokeWidth = components.BorderThin
+		block.StrokeColor = t.Border
 		block.SetMinSize(fyne.NewSize(24, 14))
 		blocks = append(blocks, block)
 	}
@@ -556,16 +600,17 @@ func buildAttemptsBlocks(attempts int) fyne.CanvasObject {
 // =============================================================================
 
 func buildStreakLine(ctx *Context) fyne.CanvasObject {
+	t := components.T()
 	streak, _ := ctx.Engine.DB.GetStreak(ctx.Engine.Character.ID)
 
-	streakLabel := components.MakeTitle(fmt.Sprintf("🔥 Streak: %d дней", streak), components.ColorAccentBright, 14)
+	streakLabel := components.MakeTitle(fmt.Sprintf("🔥 Streak: %d дней", streak), t.Accent, 14)
 
 	var milestoneLabel *canvas.Text
 	title := models.StreakTitle(streak)
 	if title != "" {
-		milestoneLabel = canvas.NewText(title, components.ColorGold)
+		milestoneLabel = canvas.NewText(title, t.Gold)
 	} else if streak == 0 {
-		milestoneLabel = canvas.NewText("Начни сегодня!", components.ColorAccentBright)
+		milestoneLabel = canvas.NewText("Начни сегодня!", t.Accent)
 	} else {
 		nextMilestone := 7
 		for _, m := range models.AllStreakMilestones() {
@@ -576,16 +621,18 @@ func buildStreakLine(ctx *Context) fyne.CanvasObject {
 		}
 		milestoneLabel = canvas.NewText(
 			fmt.Sprintf("До награды: %d дн.", nextMilestone-streak),
-			components.ColorTextDim,
+			t.TextSecondary,
 		)
 	}
-	milestoneLabel.TextSize = 13
+	milestoneLabel.TextSize = components.TextBodyMD
 
-	sep := canvas.NewText("|", components.ColorTextDim)
-	sep.TextSize = 13
+	sep := canvas.NewText("|", t.TextMuted)
+	sep.TextSize = components.TextBodyMD
 
-	bg := canvas.NewRectangle(components.ColorBGCard)
-	bg.CornerRadius = 6
+	bg := canvas.NewRectangle(t.BGCard)
+	bg.CornerRadius = components.RadiusMD
+	bg.StrokeWidth = components.BorderThin
+	bg.StrokeColor = t.Border
 	row := container.NewHBox(streakLabel, sep, milestoneLabel)
 	return container.NewStack(bg, container.New(layout.NewCustomPaddedLayout(6, 6, 10, 10), row))
 }
@@ -597,7 +644,7 @@ func buildStreakLine(ctx *Context) fyne.CanvasObject {
 func buildTodayQuestsWidget(ctx *Context) fyne.CanvasObject {
 	quests, err := ctx.Engine.DB.GetActiveQuests(ctx.Engine.Character.ID)
 	if err != nil {
-		return components.MakeLabel("Ошибка: "+err.Error(), components.ColorRed)
+		return components.MakeLabel("Ошибка: "+err.Error(), components.T().Danger)
 	}
 
 	if len(quests) == 0 {
@@ -654,15 +701,15 @@ func buildTodayQuestSection(ctx *Context, quests []models.Quest) fyne.CanvasObje
 
 func buildTodayQuestCard(ctx *Context, q models.Quest) *fyne.Container {
 	rankBadge := components.MakeRankBadge(q.Rank)
-	titleText := components.MakeTitle(q.Title, components.ColorText, 14)
+	titleText := components.MakeTitle(q.Title, components.T().Text, 14)
 
 	var typeIndicator fyne.CanvasObject
 	if q.IsDaily {
-		lbl := components.MakeLabel("Ежедневное", components.ColorBlue)
+		lbl := components.MakeLabel("Ежедневное", components.T().Blue)
 		lbl.TextSize = 11
 		typeIndicator = lbl
 	} else if q.DungeonID != nil {
-		lbl := components.MakeLabel("Данж", components.ColorPurple)
+		lbl := components.MakeLabel("Данж", components.T().Purple)
 		lbl.TextSize = 11
 		typeIndicator = lbl
 	} else {
@@ -672,7 +719,7 @@ func buildTodayQuestCard(ctx *Context, q models.Quest) *fyne.Container {
 	statText := components.MakeLabel(
 		fmt.Sprintf("+%d EXP -> %s | Ранг: %s | +%d попыток",
 			q.Exp, q.TargetStat.DisplayName(), q.Rank, models.AttemptsForQuestEXP(q.Exp)),
-		components.ColorTextDim,
+		components.T().TextSecondary,
 	)
 
 	completeBtn := widget.NewButtonWithIcon("", theme.ConfirmIcon(), func() {
@@ -741,21 +788,31 @@ func statShortCode(statType models.StatType) string {
 }
 
 func makeTopCard(content fyne.CanvasObject, minSize fyne.Size) *fyne.Container {
-	bg := canvas.NewRectangle(components.ColorBGCard)
-	bg.CornerRadius = 8
+	t := components.T()
+	bg := canvas.NewRectangle(t.BGCard)
+	bg.CornerRadius = components.RadiusLG
+	bg.StrokeWidth = components.BorderThin
+	bg.StrokeColor = t.Border
 	bg.SetMinSize(minSize)
 	inset := container.New(layout.NewCustomPaddedLayout(10, 10, 10, 10), content)
 	return container.NewStack(bg, inset)
 }
 
-func resolveEnemyImagePath(floor int) string {
-	name := fmt.Sprintf("floor_%d.png", floor)
+func resolveEnemyImagePath(enemy models.Enemy) string {
+	legacyByFloor := fmt.Sprintf("floor_%d.png", enemy.Floor)
+	slugName := enemyImageSlug(enemy.Name)
 	candidates := []string{
-		filepath.Join("assets", "enemies", name),
+		filepath.Join("assets", "enemies", fmt.Sprintf("enemy_%d.png", enemy.ID)),
+		filepath.Join("assets", "enemies", slugName+".png"),
+		filepath.Join("assets", "enemies", legacyByFloor),
 	}
 	if exePath, err := os.Executable(); err == nil {
 		exeDir := filepath.Dir(exePath)
-		candidates = append(candidates, filepath.Join(exeDir, "assets", "enemies", name))
+		candidates = append(candidates,
+			filepath.Join(exeDir, "assets", "enemies", fmt.Sprintf("enemy_%d.png", enemy.ID)),
+			filepath.Join(exeDir, "assets", "enemies", slugName+".png"),
+			filepath.Join(exeDir, "assets", "enemies", legacyByFloor),
+		)
 	}
 	for _, p := range candidates {
 		if info, err := os.Stat(p); err == nil && !info.IsDir() {
@@ -763,6 +820,17 @@ func resolveEnemyImagePath(floor int) string {
 		}
 	}
 	return ""
+}
+
+func enemyImageSlug(name string) string {
+	slug := strings.ToLower(strings.TrimSpace(name))
+	slug = strings.ReplaceAll(slug, " ", "_")
+	slug = strings.ReplaceAll(slug, "—", "_")
+	slug = strings.ReplaceAll(slug, "-", "_")
+	for strings.Contains(slug, "__") {
+		slug = strings.ReplaceAll(slug, "__", "_")
+	}
+	return slug
 }
 
 func resolveAvatarPath() string {

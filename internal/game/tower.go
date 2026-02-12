@@ -2,13 +2,80 @@ package game
 
 import (
 	"fmt"
+	"sort"
 
 	"solo-leveling/internal/models"
 )
 
-// GetNextEnemyForPlayer returns the first enemy in sequence that is not yet cleared.
-// If all enemies are cleared, it returns nil, nil.
-func (e *Engine) GetNextEnemyForPlayer() (*models.Enemy, error) {
+// GetCurrentZone returns the first zone where the boss is not defeated.
+// If all bosses are defeated, it returns the highest known zone.
+func (e *Engine) GetCurrentZone(userID int64) (int, error) {
+	allEnemies, err := e.DB.GetAllEnemies()
+	if err != nil {
+		return 1, err
+	}
+	if len(allEnemies) == 0 {
+		return 1, nil
+	}
+
+	defeated, err := e.defeatedEnemyIDs(userID)
+	if err != nil {
+		return 1, err
+	}
+
+	minOpenZone := 0
+	maxZone := 1
+	hasBoss := false
+	for _, enemy := range allEnemies {
+		if enemy.Zone > maxZone {
+			maxZone = enemy.Zone
+		}
+		if !isEnemyBoss(enemy) {
+			continue
+		}
+		hasBoss = true
+		if defeated[enemy.ID] {
+			continue
+		}
+		if minOpenZone == 0 || enemy.Zone < minOpenZone {
+			minOpenZone = enemy.Zone
+		}
+	}
+
+	if minOpenZone > 0 {
+		return minOpenZone, nil
+	}
+	if !hasBoss {
+		return 1, nil
+	}
+	return maxZone, nil
+}
+
+// IsBossAvailable returns true when all regular enemies in the zone are defeated.
+func (e *Engine) IsBossAvailable(userID int64, zone int) (bool, error) {
+	allEnemies, err := e.DB.GetAllEnemies()
+	if err != nil {
+		return false, err
+	}
+	defeated, err := e.defeatedEnemyIDs(userID)
+	if err != nil {
+		return false, err
+	}
+
+	for _, enemy := range allEnemies {
+		if enemy.Zone != zone || isEnemyBoss(enemy) {
+			continue
+		}
+		if !defeated[enemy.ID] {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// PickNextEnemy chooses a single next enemy for Today:
+// regular enemies in current zone first, then the zone boss.
+func (e *Engine) PickNextEnemy(userID int64) (*models.Enemy, error) {
 	allEnemies, err := e.DB.GetAllEnemies()
 	if err != nil {
 		return nil, err
@@ -17,21 +84,69 @@ func (e *Engine) GetNextEnemyForPlayer() (*models.Enemy, error) {
 		return nil, nil
 	}
 
-	// Always keep the first enemy unlocked as an entry point.
-	_ = e.DB.UnlockEnemy(e.Character.ID, allEnemies[0].ID)
+	defeated, err := e.defeatedEnemyIDs(userID)
+	if err != nil {
+		return nil, err
+	}
 
-	for i := range allEnemies {
-		reward, err := e.DB.GetBattleReward(e.Character.ID, allEnemies[i].ID)
+	zone, err := e.GetCurrentZone(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	var zoneEnemies []models.Enemy
+	for _, enemy := range allEnemies {
+		if enemy.Zone == zone {
+			zoneEnemies = append(zoneEnemies, enemy)
+		}
+	}
+	if len(zoneEnemies) == 0 {
+		return nil, nil
+	}
+
+	sort.Slice(zoneEnemies, func(i, j int) bool {
+		return zoneEnemies[i].ID < zoneEnemies[j].ID
+	})
+
+	var boss *models.Enemy
+	for i := range zoneEnemies {
+		if isEnemyBoss(zoneEnemies[i]) {
+			candidate := zoneEnemies[i]
+			boss = &candidate
+			break
+		}
+	}
+
+	if boss != nil && !defeated[boss.ID] {
+		available, err := e.IsBossAvailable(userID, zone)
 		if err != nil {
 			return nil, err
 		}
-		if reward == nil {
-			_ = e.DB.UnlockEnemy(e.Character.ID, allEnemies[i].ID)
-			enemy := allEnemies[i]
-			return &enemy, nil
+		if available {
+			return boss, nil
 		}
 	}
+
+	for i := range zoneEnemies {
+		enemy := zoneEnemies[i]
+		if isEnemyBoss(enemy) {
+			continue
+		}
+		if !defeated[enemy.ID] {
+			candidate := enemy
+			return &candidate, nil
+		}
+	}
+
+	if boss != nil && !defeated[boss.ID] {
+		return boss, nil
+	}
 	return nil, nil
+}
+
+// GetNextEnemyForPlayer keeps compatibility with existing callers.
+func (e *Engine) GetNextEnemyForPlayer() (*models.Enemy, error) {
+	return e.PickNextEnemy(e.Character.ID)
 }
 
 // GetCurrentEnemy keeps backward compatibility with existing callers/tests.
@@ -77,19 +192,18 @@ func (e *Engine) spendBattleAttempt() error {
 	return nil
 }
 
-func (e *Engine) unlockNextEnemy(currentEnemyID int64) (string, error) {
-	allEnemies, err := e.DB.GetAllEnemies()
+func (e *Engine) defeatedEnemyIDs(userID int64) (map[int64]bool, error) {
+	rewards, err := e.DB.GetAllBattleRewards(userID)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	for i := range allEnemies {
-		if allEnemies[i].ID == currentEnemyID && i+1 < len(allEnemies) {
-			next := allEnemies[i+1]
-			if err := e.DB.UnlockEnemy(e.Character.ID, next.ID); err != nil {
-				return "", err
-			}
-			return next.Name, nil
-		}
+	defeated := make(map[int64]bool, len(rewards))
+	for _, reward := range rewards {
+		defeated[reward.EnemyID] = true
 	}
-	return "", nil
+	return defeated, nil
+}
+
+func isEnemyBoss(enemy models.Enemy) bool {
+	return enemy.IsBoss || enemy.Type == models.EnemyBoss
 }

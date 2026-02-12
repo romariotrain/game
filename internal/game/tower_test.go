@@ -1,6 +1,7 @@
 package game
 
 import (
+	"sort"
 	"testing"
 
 	"solo-leveling/internal/database"
@@ -51,6 +52,57 @@ func totalStatEXP(stats []models.StatLevel) int {
 	return total
 }
 
+func isBossEnemy(enemy models.Enemy) bool {
+	return enemy.IsBoss || enemy.Type == models.EnemyBoss
+}
+
+func zoneEnemies(t *testing.T, e *Engine, zone int) ([]models.Enemy, models.Enemy) {
+	t.Helper()
+
+	all, err := e.DB.GetAllEnemies()
+	if err != nil {
+		t.Fatalf("get enemies: %v", err)
+	}
+	var regular []models.Enemy
+	var boss models.Enemy
+	foundBoss := false
+	for _, enemy := range all {
+		if enemy.Zone != zone {
+			continue
+		}
+		if isBossEnemy(enemy) {
+			boss = enemy
+			foundBoss = true
+			continue
+		}
+		regular = append(regular, enemy)
+	}
+	if !foundBoss {
+		t.Fatalf("zone %d boss not found", zone)
+	}
+	sort.Slice(regular, func(i, j int) bool { return regular[i].ID < regular[j].ID })
+	return regular, boss
+}
+
+func markDefeated(t *testing.T, e *Engine, enemyID int64) {
+	t.Helper()
+	existing, err := e.DB.GetBattleReward(e.Character.ID, enemyID)
+	if err != nil {
+		t.Fatalf("get reward: %v", err)
+	}
+	if existing != nil {
+		return
+	}
+	if err := e.DB.InsertBattleReward(&models.BattleReward{
+		CharID:  e.Character.ID,
+		EnemyID: enemyID,
+		Title:   "test",
+		Badge:   "test",
+	}); err != nil {
+		t.Fatalf("insert reward: %v", err)
+	}
+}
+
 func TestTowerWinUnlocksNextEnemy(t *testing.T) {
 	e := newTestEngine(t)
 
@@ -94,12 +146,8 @@ func TestTowerWinUnlocksNextEnemy(t *testing.T) {
 		t.Fatal("expected first-win reward to be created")
 	}
 
-	unlocked, err := e.DB.GetUnlockedEnemyIDs(e.Character.ID)
-	if err != nil {
-		t.Fatalf("get unlocked enemies: %v", err)
-	}
-	if !unlocked[next.ID] {
-		t.Fatal("expected next enemy to be unlocked")
+	if next.Zone < current.Zone {
+		t.Fatalf("next enemy moved backwards by zone: current=%d next=%d", current.Zone, next.Zone)
 	}
 }
 
@@ -193,5 +241,95 @@ func TestBattleDoesNotGrantEXP(t *testing.T) {
 	afterEXP := totalStatEXP(afterStats)
 	if afterEXP != beforeEXP {
 		t.Fatalf("battle changed EXP: before=%d after=%d", beforeEXP, afterEXP)
+	}
+}
+
+func TestPickNextEnemyReturnsRegularWhenRegularRemaining(t *testing.T) {
+	e := newTestEngine(t)
+
+	regular, _ := zoneEnemies(t, e, 1)
+	if len(regular) == 0 {
+		t.Fatal("expected regular enemies in zone 1")
+	}
+
+	for i := 1; i < len(regular); i++ {
+		markDefeated(t, e, regular[i].ID)
+	}
+
+	next, err := e.PickNextEnemy(e.Character.ID)
+	if err != nil {
+		t.Fatalf("pick next enemy: %v", err)
+	}
+	if next == nil {
+		t.Fatal("expected next enemy")
+	}
+	if next.ID != regular[0].ID {
+		t.Fatalf("expected regular enemy id=%d, got id=%d", regular[0].ID, next.ID)
+	}
+	if isBossEnemy(*next) {
+		t.Fatal("expected regular enemy, got boss")
+	}
+}
+
+func TestPickNextEnemyReturnsBossWhenZoneRegularDefeated(t *testing.T) {
+	e := newTestEngine(t)
+
+	regular, boss := zoneEnemies(t, e, 1)
+	for _, enemy := range regular {
+		markDefeated(t, e, enemy.ID)
+	}
+
+	next, err := e.PickNextEnemy(e.Character.ID)
+	if err != nil {
+		t.Fatalf("pick next enemy: %v", err)
+	}
+	if next == nil {
+		t.Fatal("expected next enemy")
+	}
+	if next.ID != boss.ID {
+		t.Fatalf("expected boss id=%d, got id=%d", boss.ID, next.ID)
+	}
+	if !isBossEnemy(*next) {
+		t.Fatal("expected boss enemy")
+	}
+}
+
+func TestCurrentZoneAdvancesAfterBossDefeated(t *testing.T) {
+	e := newTestEngine(t)
+
+	regular, boss := zoneEnemies(t, e, 1)
+	for _, enemy := range regular {
+		markDefeated(t, e, enemy.ID)
+	}
+	markDefeated(t, e, boss.ID)
+
+	zone, err := e.GetCurrentZone(e.Character.ID)
+	if err != nil {
+		t.Fatalf("get current zone: %v", err)
+	}
+	if zone != 2 {
+		t.Fatalf("expected current zone 2, got %d", zone)
+	}
+}
+
+func TestZoneHasOneBoss(t *testing.T) {
+	e := newTestEngine(t)
+
+	all, err := e.DB.GetAllEnemies()
+	if err != nil {
+		t.Fatalf("get enemies: %v", err)
+	}
+
+	bossByZone := map[int]int{}
+	for _, enemy := range all {
+		if isBossEnemy(enemy) {
+			bossByZone[enemy.Zone]++
+		}
+	}
+
+	for zone := 1; zone <= 3; zone++ {
+		if bossByZone[zone] != 1 {
+			t.Fatalf("expected exactly 1 boss in zone %d, got %d", zone, bossByZone[zone])
+		}
 	}
 }

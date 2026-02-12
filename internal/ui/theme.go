@@ -9,74 +9,81 @@ import (
 	"solo-leveling/internal/ui/components"
 )
 
-// SoloLevelingTheme - dark theme inspired by Solo Leveling
+// SoloLevelingTheme - dark theme driven by components.T() tokens.
 type SoloLevelingTheme struct{}
 
 var _ fyne.Theme = (*SoloLevelingTheme)(nil)
 
-func (t *SoloLevelingTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) color.Color {
+func (th *SoloLevelingTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) color.Color {
+	t := components.T()
 	switch name {
 	case theme.ColorNameBackground:
-		return components.ColorBG
+		return t.BG
 	case theme.ColorNameButton:
-		return components.ColorAccent
+		return t.AccentDim
 	case theme.ColorNameDisabledButton:
-		return color.NRGBA{R: 50, G: 50, B: 70, A: 255}
+		return t.BGCardHover
 	case theme.ColorNameForeground:
-		return components.ColorText
+		return t.Text
 	case theme.ColorNamePlaceHolder:
-		return components.ColorTextDim
+		return t.TextSecondary
 	case theme.ColorNameHover:
-		return color.NRGBA{R: 40, G: 40, B: 65, A: 255}
+		return t.BGCardHover
 	case theme.ColorNameInputBackground:
-		return color.NRGBA{R: 20, G: 20, B: 35, A: 255}
+		return t.BGPanel
 	case theme.ColorNameInputBorder:
-		return color.NRGBA{R: 60, G: 60, B: 90, A: 255}
+		return t.Border
 	case theme.ColorNamePrimary:
-		return components.ColorAccent
+		return t.Accent
 	case theme.ColorNameFocus:
-		return components.ColorAccentBright
+		return t.Accent
 	case theme.ColorNameSelection:
-		return color.NRGBA{R: 60, G: 50, B: 120, A: 255}
+		return t.BorderActive
 	case theme.ColorNameSeparator:
-		return color.NRGBA{R: 45, G: 45, B: 70, A: 255}
+		return t.Border
 	case theme.ColorNameOverlayBackground:
-		return color.NRGBA{R: 10, G: 10, B: 20, A: 230}
+		return color.NRGBA{R: t.BG.R, G: t.BG.G, B: t.BG.B, A: 230}
 	case theme.ColorNameMenuBackground:
-		return components.ColorBGSecondary
+		return t.BGPanel
 	case theme.ColorNameHeaderBackground:
-		return components.ColorBGCard
+		return t.BGCard
 	case theme.ColorNameDisabled:
-		return components.ColorTextDim
+		return t.TextMuted
 	case theme.ColorNameScrollBar:
-		return color.NRGBA{R: 60, G: 60, B: 90, A: 180}
+		return color.NRGBA{R: t.Border.R, G: t.Border.G, B: t.Border.B, A: 180}
+	case theme.ColorNameError:
+		return t.Danger
+	case theme.ColorNameSuccess:
+		return t.Success
+	case theme.ColorNameWarning:
+		return t.Warning
 	default:
 		return theme.DefaultTheme().Color(name, theme.VariantDark)
 	}
 }
 
-func (t *SoloLevelingTheme) Icon(name fyne.ThemeIconName) fyne.Resource {
+func (th *SoloLevelingTheme) Icon(name fyne.ThemeIconName) fyne.Resource {
 	return theme.DefaultTheme().Icon(name)
 }
 
-func (t *SoloLevelingTheme) Font(style fyne.TextStyle) fyne.Resource {
+func (th *SoloLevelingTheme) Font(style fyne.TextStyle) fyne.Resource {
 	return theme.DefaultTheme().Font(style)
 }
 
-func (t *SoloLevelingTheme) Size(name fyne.ThemeSizeName) float32 {
+func (th *SoloLevelingTheme) Size(name fyne.ThemeSizeName) float32 {
 	switch name {
 	case theme.SizeNamePadding:
-		return 6
+		return components.SpaceMD / 2 // 6px
 	case theme.SizeNameInlineIcon:
 		return 20
 	case theme.SizeNameText:
-		return 14
+		return components.TextBodyMD
 	case theme.SizeNameHeadingText:
-		return 22
+		return components.TextHeadingXL
 	case theme.SizeNameSubHeadingText:
-		return 17
+		return components.TextHeadingLG
 	case theme.SizeNameInputBorder:
-		return 1
+		return components.BorderThin
 	default:
 		return theme.DefaultTheme().Size(name)
 	}

@@ -1,5 +1,7 @@
 package database
 
+import "fmt"
+
 func (db *DB) migrate() error {
 	schema := `
 	CREATE TABLE IF NOT EXISTS character (
@@ -148,7 +150,9 @@ func (db *DB) migrate() error {
 		type TEXT NOT NULL DEFAULT 'regular',
 		hp INTEGER NOT NULL DEFAULT 100,
 		attack INTEGER NOT NULL DEFAULT 10,
-		floor INTEGER NOT NULL DEFAULT 1
+		floor INTEGER NOT NULL DEFAULT 1,
+		zone INTEGER NOT NULL DEFAULT 1,
+		is_boss INTEGER NOT NULL DEFAULT 0
 	);
 
 	CREATE TABLE IF NOT EXISTS streak_titles (
@@ -244,5 +248,52 @@ func (db *DB) migrate() error {
 		db.conn.Exec(m) // ignore errors (column already exists)
 	}
 
+	if err := db.addColumnIfMissing("enemies", "zone", "INTEGER NOT NULL DEFAULT 1"); err != nil {
+		return err
+	}
+	if err := db.addColumnIfMissing("enemies", "is_boss", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := db.NormalizeEnemyZones(); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+func (db *DB) addColumnIfMissing(table string, column string, definition string) error {
+	exists, err := db.columnExists(table, column)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return nil
+	}
+
+	_, err = db.conn.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, definition))
+	return err
+}
+
+func (db *DB) columnExists(table string, column string) (bool, error) {
+	rows, err := db.conn.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name string
+		var cType string
+		var notNull int
+		var dfltValue any
+		var pk int
+		if err := rows.Scan(&cid, &name, &cType, &notNull, &dfltValue, &pk); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, nil
 }

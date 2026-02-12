@@ -29,4 +29,5 @@ type Context struct {
 	RefreshAchievements func()
 	RefreshHistory      func()
 	StartBattle         func(enemy models.Enemy)
+	QuestThemeMode      string
 }
