@@ -107,6 +107,14 @@ func (db *DB) FailQuest(questID int64) error {
 	return err
 }
 
+func (db *DB) SetQuestCreatedAt(questID int64, createdAt time.Time) error {
+	_, err := db.conn.Exec(
+		"UPDATE quests SET created_at = ? WHERE id = ?",
+		createdAt, questID,
+	)
+	return err
+}
+
 func (db *DB) DeleteQuest(questID int64) error {
 	_, err := db.conn.Exec("DELETE FROM quests WHERE id = ?", questID)
 	return err
@@ -215,7 +223,7 @@ func (db *DB) HasDailyQuestForToday(charID int64, templateID int64) (bool, error
 	today := time.Now().Format("2006-01-02")
 	var count int
 	err := db.conn.QueryRow(
-		"SELECT COUNT(*) FROM quests WHERE char_id = ? AND template_id = ? AND date(created_at) = ?",
+		"SELECT COUNT(*) FROM quests WHERE char_id = ? AND template_id = ? AND substr(created_at, 1, 10) = ?",
 		charID, templateID, today,
 	).Scan(&count)
 	if err != nil {

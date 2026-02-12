@@ -2,6 +2,7 @@ package game
 
 import (
 	"fmt"
+	"time"
 
 	"solo-leveling/internal/models"
 )
@@ -209,6 +210,35 @@ func (e *Engine) GetAttempts() int {
 	}
 	e.Character.Attempts = attempts
 	return attempts
+}
+
+// AutoFailUnfinishedQuests marks unfinished main/daily quests from previous days as failed.
+func (e *Engine) AutoFailUnfinishedQuests() (int, error) {
+	active, err := e.DB.GetActiveQuests(e.Character.ID)
+	if err != nil {
+		return 0, err
+	}
+
+	today := time.Now().Format("2006-01-02")
+	failed := 0
+	for _, q := range active {
+		// Keep dungeon chains untouched; fail only regular/daily quest flow.
+		if q.DungeonID != nil {
+			continue
+		}
+		if q.CreatedAt.Format("2006-01-02") == today {
+			continue
+		}
+		if err := e.DB.FailQuest(q.ID); err != nil {
+			return failed, err
+		}
+		failed++
+	}
+
+	if failed > 0 {
+		_ = e.DB.RecordDailyActivity(e.Character.ID, 0, failed, 0)
+	}
+	return failed, nil
 }
 
 // SpawnDailyQuests checks all active daily templates and creates today's quests if missing

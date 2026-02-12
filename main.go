@@ -46,6 +46,15 @@ func main() {
 		log.Printf("Warning: failed to init dungeons: %v", err)
 	}
 
+	// Auto-fail unfinished non-dungeon quests from previous days.
+	failed, err := engine.AutoFailUnfinishedQuests()
+	if err != nil {
+		log.Printf("Warning: failed to auto-fail stale quests: %v", err)
+	}
+	if failed > 0 {
+		log.Printf("Auto-failed %d unfinished quests from previous days", failed)
+	}
+
 	// Spawn daily quests for today
 	spawned, err := engine.SpawnDailyQuests()
 	if err != nil {
