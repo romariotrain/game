@@ -2,6 +2,7 @@ package tabs
 
 import (
 	"fmt"
+	"image"
 	"image/color"
 	"os"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -84,7 +86,7 @@ func buildEnemyGalleryTabContent(ctx *Context) fyne.CanvasObject {
 	}
 
 	title := components.MakeSystemHeaderCompact("Галерея убитых врагов")
-	description := components.MakeLabel("Архив с подтвержденными устранениями и краткой историей целей.", t.TextSecondary)
+	description := components.MakeLabel("Нажмите на зону, затем на изображение врага, чтобы открыть его историю.", t.TextSecondary)
 	description.TextSize = components.TextBodySM
 
 	if len(defeated) == 0 {
@@ -99,12 +101,30 @@ func buildEnemyGalleryTabContent(ctx *Context) fyne.CanvasObject {
 		return centerWithMaxWidth(content, 960)
 	}
 
-	list := container.NewVBox()
-	for i, enemy := range defeated {
-		if i > 0 {
-			list.Add(makeAchievementsGap(components.SpaceMD))
+	zones := map[int][]models.DefeatedEnemy{}
+	for _, enemy := range defeated {
+		zones[enemy.Zone] = append(zones[enemy.Zone], enemy)
+	}
+
+	accordion := widget.NewAccordion()
+	first := true
+	for zone := 1; zone <= 5; zone++ {
+		enemies := zones[zone]
+		detail := buildZoneEnemyList(ctx, enemies)
+		if len(enemies) == 0 {
+			empty := components.MakeLabel("В этой зоне пока нет побеждённых врагов.", t.TextSecondary)
+			empty.TextSize = components.TextBodySM
+			detail = container.NewVBox(empty)
 		}
-		list.Add(buildDefeatedEnemyGalleryCard(enemy))
+		item := widget.NewAccordionItem(
+			fmt.Sprintf("Zone %d · %s (%d)", zone, zoneLabel(zone), len(enemies)),
+			detail,
+		)
+		if first {
+			item.Open = true
+			first = false
+		}
+		accordion.Append(item)
 	}
 
 	content := container.NewVBox(
@@ -112,9 +132,20 @@ func buildEnemyGalleryTabContent(ctx *Context) fyne.CanvasObject {
 		title,
 		description,
 		makeAchievementsGap(components.SpaceSM),
-		list,
+		accordion,
 	)
-	return centerWithMaxWidth(content, 960)
+	return centerWithMaxWidth(content, 1200)
+}
+
+func buildZoneEnemyList(ctx *Context, enemies []models.DefeatedEnemy) fyne.CanvasObject {
+	list := container.NewVBox()
+	for i, enemy := range enemies {
+		if i > 0 {
+			list.Add(makeAchievementsGap(components.SpaceLG))
+		}
+		list.Add(buildDefeatedEnemyGalleryCard(ctx, enemy))
+	}
+	return list
 }
 
 // achievementIcon maps achievement key -> emoji icon.
@@ -251,91 +282,84 @@ func buildLockedTile(a models.Achievement, w, h float32) fyne.CanvasObject {
 	return container.NewStack(bg, inset)
 }
 
-func buildDefeatedEnemyGalleryCard(enemy models.DefeatedEnemy) fyne.CanvasObject {
+func buildDefeatedEnemyGalleryCard(ctx *Context, enemy models.DefeatedEnemy) fyne.CanvasObject {
 	t := components.T()
-	rankColor := components.QuestRankColor(enemy.Rank)
-
 	panelBg := canvas.NewRectangle(t.BGCard)
 	panelBg.CornerRadius = components.RadiusXL
 	panelBg.StrokeWidth = components.BorderThin
 	panelBg.StrokeColor = t.Border
 
-	leftStripe := canvas.NewRectangle(rankColor)
-	leftStripe.SetMinSize(fyne.NewSize(4, 0))
-
-	name := components.MakeTitle(strings.ToUpper(enemy.Name), t.Text, components.TextBodyLG)
+	name := components.MakeTitle(enemy.Name, t.Text, components.TextBodyLG)
 	rankBadge := components.MakeRankBadge(enemy.Rank)
+	nameRow := container.NewHBox(rankBadge, name)
 
-	zoneText := components.MakeLabel(fmt.Sprintf("Zone %d · %s", enemy.Zone, zoneLabel(enemy.Zone)), t.TextSecondary)
-	zoneText.TextSize = components.TextBodySM
-
-	dateText := "Неизвестно"
+	dateText := "дата неизвестна"
 	if enemy.DefeatedAt != nil {
 		dateText = enemy.DefeatedAt.Local().Format("02.01.2006 15:04")
 	}
-	defeatedLabel := components.MakeLabel("Побеждён: "+dateText, t.Success)
-	defeatedLabel.TextSize = components.TextBodySM
-
-	roleColor := t.TextSecondary
-	roleText := "Regular"
+	metaText := fmt.Sprintf("Побеждён: %s", dateText)
 	if enemy.IsBoss {
-		roleColor = t.Danger
-		roleText = "Boss"
+		metaText += " · BOSS"
 	}
-	roleLabel := components.MakeLabel(roleText, roleColor)
-	roleLabel.TextSize = components.TextBodySM
-	roleLabel.TextStyle = fyne.TextStyle{Bold: true}
+	metaLabel := components.MakeLabel(metaText, t.TextSecondary)
+	metaLabel.TextSize = components.TextBodySM
 
-	storyLabel := components.MakeLabel("История", t.AccentDim)
-	storyLabel.TextSize = components.TextBodySM
-	storyLabel.TextStyle = fyne.TextStyle{Bold: true}
+	hint := components.MakeLabel("Нажмите на портрет, чтобы открыть историю", t.AccentDim)
+	hint.TextSize = components.TextBodySM
 
-	story := widget.NewLabel(enemyLore(enemy))
-	story.Wrapping = fyne.TextWrapWord
-
-	topRow := container.NewHBox(rankBadge, name)
-	metaRow := container.NewHBox(zoneText, layout.NewSpacer(), roleLabel, defeatedLabel)
-
-	details := container.NewVBox(
-		topRow,
-		metaRow,
-		storyLabel,
-		story,
+	content := container.NewVBox(
+		nameRow,
+		metaLabel,
+		hint,
+		makeAchievementsGap(components.SpaceSM),
+		buildEnemyPortrait(ctx, enemy),
 	)
-
-	body := container.NewBorder(nil, nil, buildEnemyPortrait(enemy), nil, details)
 	inset := container.New(layout.NewCustomPaddedLayout(
 		components.SpaceMD, components.SpaceMD, components.SpaceMD, components.SpaceMD,
-	), body)
-
-	card := container.NewStack(panelBg, inset)
-	return container.NewBorder(nil, nil, leftStripe, nil, card)
+	), content)
+	return container.NewStack(panelBg, inset)
 }
 
-func buildEnemyPortrait(enemy models.DefeatedEnemy) fyne.CanvasObject {
+func buildEnemyPortrait(ctx *Context, enemy models.DefeatedEnemy) fyne.CanvasObject {
 	t := components.T()
-
-	bg := canvas.NewRectangle(t.BGPanel)
-	bg.CornerRadius = components.RadiusMD
-	bg.StrokeWidth = components.BorderThin
-	bg.StrokeColor = t.Border
-	bg.SetMinSize(fyne.NewSize(160, 110))
+	const maxWidth float32 = 320
+	portraitSize := fyne.NewSize(220, 160)
+	frame := canvas.NewRectangle(color.Transparent)
+	frame.CornerRadius = components.RadiusMD
+	frame.StrokeWidth = components.BorderThin
+	frame.StrokeColor = t.Border
+	frame.SetMinSize(portraitSize)
 
 	var portrait fyne.CanvasObject
 	path := enemyPortraitPath(enemy)
 	if path != "" {
+		portraitSize = enemyPortraitSize(path, maxWidth)
+		frame.SetMinSize(portraitSize)
 		img := canvas.NewImageFromFile(path)
+		// Keep original proportions: no forced 3:4 stretch.
 		img.FillMode = canvas.ImageFillContain
-		img.SetMinSize(fyne.NewSize(148, 98))
-		portrait = container.NewCenter(img)
+		img.SetMinSize(portraitSize)
+		portrait = img
 	} else {
+		bg := canvas.NewRectangle(t.BGPanel)
+		bg.CornerRadius = components.RadiusMD
+		bg.StrokeWidth = components.BorderThin
+		bg.StrokeColor = t.Border
+		bg.SetMinSize(portraitSize)
 		img := canvas.NewImageFromResource(enemyPortraitResource(enemy))
 		img.FillMode = canvas.ImageFillContain
 		img.SetMinSize(fyne.NewSize(52, 52))
-		portrait = container.NewCenter(img)
+		portrait = container.NewStack(bg, container.NewCenter(img))
 	}
 
-	stack := []fyne.CanvasObject{bg, container.NewPadded(portrait)}
+	showStory := func() {
+		if ctx == nil || ctx.Window == nil {
+			return
+		}
+		dialog.ShowInformation(enemy.Name, enemyLore(enemy), ctx.Window)
+	}
+
+	stack := []fyne.CanvasObject{portrait, frame, newTapOverlay(showStory)}
 	if enemy.IsBoss {
 		bossTag := components.MakeLabel("BOSS", t.Danger)
 		bossTag.TextSize = components.TextBodySM
@@ -344,6 +368,28 @@ func buildEnemyPortrait(enemy models.DefeatedEnemy) fyne.CanvasObject {
 		stack = append(stack, tagLayer)
 	}
 	return container.NewStack(stack...)
+}
+
+func enemyPortraitSize(path string, maxWidth float32) fyne.Size {
+	file, err := os.Open(path)
+	if err != nil {
+		return fyne.NewSize(maxWidth, maxWidth*0.6)
+	}
+	defer file.Close()
+
+	cfg, _, err := image.DecodeConfig(file)
+	if err != nil || cfg.Width <= 0 || cfg.Height <= 0 {
+		return fyne.NewSize(maxWidth, maxWidth*0.6)
+	}
+
+	width := float32(cfg.Width)
+	height := float32(cfg.Height)
+	if width > maxWidth {
+		scale := maxWidth / width
+		width = maxWidth
+		height *= scale
+	}
+	return fyne.NewSize(width, height)
 }
 
 func enemyPortraitPath(enemy models.DefeatedEnemy) string {
@@ -396,6 +442,52 @@ func enemyFileSlug(name string) string {
 	return slug
 }
 
+type tapOverlay struct {
+	widget.BaseWidget
+	onTap func()
+}
+
+func newTapOverlay(onTap func()) *tapOverlay {
+	t := &tapOverlay{onTap: onTap}
+	t.ExtendBaseWidget(t)
+	return t
+}
+
+func (t *tapOverlay) Tapped(_ *fyne.PointEvent) {
+	if t.onTap != nil {
+		t.onTap()
+	}
+}
+
+func (t *tapOverlay) TappedSecondary(_ *fyne.PointEvent) {}
+
+func (t *tapOverlay) CreateRenderer() fyne.WidgetRenderer {
+	bg := canvas.NewRectangle(color.Transparent)
+	return &tapOverlayRenderer{background: bg}
+}
+
+type tapOverlayRenderer struct {
+	background *canvas.Rectangle
+}
+
+func (r *tapOverlayRenderer) Layout(size fyne.Size) {
+	r.background.Resize(size)
+}
+
+func (r *tapOverlayRenderer) MinSize() fyne.Size {
+	return fyne.NewSize(0, 0)
+}
+
+func (r *tapOverlayRenderer) Refresh() {
+	r.background.Refresh()
+}
+
+func (r *tapOverlayRenderer) Objects() []fyne.CanvasObject {
+	return []fyne.CanvasObject{r.background}
+}
+
+func (r *tapOverlayRenderer) Destroy() {}
+
 func centerWithMaxWidth(content fyne.CanvasObject, maxWidth float32) fyne.CanvasObject {
 	return container.New(&centeredMaxWidthLayout{maxWidth: maxWidth}, content)
 }
@@ -447,12 +539,16 @@ func enemyLore(enemy models.DefeatedEnemy) string {
 func zoneLabel(zone int) string {
 	switch zone {
 	case 1:
-		return "Outer Ruins"
+		return "Туманные Болота"
 	case 2:
-		return "Crimson Gate"
+		return "Забытые Руины"
 	case 3:
-		return "Shadow Citadel"
+		return "Ледяные Пики"
+	case 4:
+		return "Пепельные Разломы"
+	case 5:
+		return "Цитадель Бездны"
 	default:
-		return "Unknown Sector"
+		return "Неизвестный сектор"
 	}
 }

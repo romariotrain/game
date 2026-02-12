@@ -540,9 +540,8 @@ func (e *Engine) ProcessRound(state *models.BattleState, choices []int) error {
 	return nil
 }
 
-// FinishBattle records the battle result and awards rewards
+// FinishBattle records the battle result.
 func (e *Engine) FinishBattle(state *models.BattleState) (*models.BattleRecord, error) {
-	totalRounds := state.Round
 	accuracy := 0.0
 	totalPatternCells := state.TotalHits + state.TotalMisses
 	if totalPatternCells > 0 {
@@ -562,40 +561,11 @@ func (e *Engine) FinishBattle(state *models.BattleState) (*models.BattleRecord, 
 	}
 
 	if state.Result == models.BattleWin {
-		// First-win rewards: title, badge, unlock next enemy
-		existing, err := e.DB.GetBattleReward(e.Character.ID, state.Enemy.ID)
-		if err != nil {
-			return nil, err
-		}
-		if existing == nil {
-			title := fmt.Sprintf("Покоритель: %s", state.Enemy.Name)
-			badge := fmt.Sprintf("Знак: %s", state.Enemy.Name)
-			reward := &models.BattleReward{
-				CharID:  e.Character.ID,
-				EnemyID: state.Enemy.ID,
-				Title:   title,
-				Badge:   badge,
-			}
-			if err := e.DB.InsertBattleReward(reward); err != nil {
-				return nil, err
-			}
-			record.RewardTitle = title
-			record.RewardBadge = badge
-
-			nextEnemy, err := e.GetNextEnemyForPlayer()
-			if err != nil {
-				return nil, err
-			}
-			if nextEnemy != nil && nextEnemy.ID != state.Enemy.ID {
-				record.UnlockedEnemyName = nextEnemy.Name
-			}
-		}
 		if err := e.UnlockAchievement(AchievementFirstBattle); err != nil {
 			return nil, err
 		}
 	}
 
-	_ = totalRounds
 	if err := e.DB.InsertBattle(record); err != nil {
 		return nil, err
 	}

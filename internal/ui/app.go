@@ -236,16 +236,6 @@ func (a *App) buildCharacterCard(level int, rank string, stats []models.StatLeve
 
 	contentItems := []fyne.CanvasObject{top, widget.NewSeparator(), statsRow}
 
-	if len(completedDungeons) > 0 {
-		var titles []fyne.CanvasObject
-		titles = append(titles, components.MakeTitle("Титулы:", t.Gold, components.TextHeadingSM))
-		for _, cd := range completedDungeons {
-			titles = append(titles, components.MakeLabel("  "+cd.EarnedTitle, t.Purple))
-		}
-		contentItems = append(contentItems, widget.NewSeparator())
-		contentItems = append(contentItems, container.NewHBox(titles...))
-	}
-
 	content := container.NewVBox(contentItems...)
 	return components.MakeCard(content)
 }
@@ -538,43 +528,6 @@ func (a *App) showBattleScreen() {
 		}()
 	}
 
-	// --- Stat bonus panel ---
-	buildStatBonusPanel := func() fyne.CanvasObject {
-		t := components.T()
-		stats, err := a.engine.GetStatLevels()
-		if err != nil {
-			return layout.NewSpacer()
-		}
-		statMap := make(map[models.StatType]int)
-		for _, s := range stats {
-			statMap[s.StatType] = s.Level
-		}
-		str := statMap[models.StatStrength]
-		agi := statMap[models.StatAgility]
-		intel := statMap[models.StatIntellect]
-		sta := statMap[models.StatEndurance]
-
-		baseDamage := memory.BasePlayerDamage(str)
-		critPct := memory.CritChance(agi) * 100
-		showMs := memory.TimeToShow(memory.Stats{INT: intel})
-		cellReduction := intel / 3
-		hpVal := memory.PlayerHP(sta)
-		damageMitigation := float64(sta) * 0.25
-
-		items := container.NewVBox(
-			components.MakeTitle("Твои бонусы", t.Accent, components.TextHeadingSM),
-			components.MakeLabel(fmt.Sprintf("💪 STR %d → %d баз. урона", str, baseDamage), t.StatSTR),
-			components.MakeLabel(fmt.Sprintf("⚡ AGI %d → %.0f%% крит", agi, critPct), t.StatAGI),
-			components.MakeLabel(fmt.Sprintf("🧠 INT %d → -%d клеток, %d мс показа", intel, cellReduction, showMs), t.StatINT),
-			components.MakeLabel(fmt.Sprintf("🛡️ STA %d → %d HP, -%.1f вход. урона", sta, hpVal, damageMitigation), t.StatSTA),
-		)
-		bg := canvas.NewRectangle(t.BGCard)
-		bg.CornerRadius = components.RadiusMD
-		bg.StrokeWidth = components.BorderThin
-		bg.StrokeColor = t.Border
-		return container.NewStack(bg, container.NewPadded(items))
-	}
-
 	var rebuildScreen func()
 	rebuildScreen = func() {
 		topRef.Objects = nil
@@ -623,17 +576,7 @@ func (a *App) showBattleScreen() {
 			statsItems := []fyne.CanvasObject{}
 			if resolvedErr != nil {
 				statsItems = append(statsItems, components.MakeLabel("Ошибка: "+resolvedErr.Error(), t.Danger))
-			} else if state.Result == models.BattleWin && resolvedRecord != nil {
-				if resolvedRecord.RewardTitle != "" {
-					statsItems = append(statsItems, components.MakeLabel("🏅 Титул: "+resolvedRecord.RewardTitle, t.Gold))
-				}
-				if resolvedRecord.RewardBadge != "" {
-					statsItems = append(statsItems, components.MakeLabel("🎖️ Бейдж: "+resolvedRecord.RewardBadge, t.Gold))
-				}
-				if resolvedRecord.UnlockedEnemyName != "" {
-					statsItems = append(statsItems, components.MakeLabel("🔓 Открыт: "+resolvedRecord.UnlockedEnemyName, t.Accent))
-				}
-			} else {
+			} else if state.Result != models.BattleWin {
 				statsItems = append(statsItems, components.MakeLabel("Поражение не наказывается.", t.TextSecondary))
 			}
 			if resolvedRecord != nil {
@@ -641,9 +584,6 @@ func (a *App) showBattleScreen() {
 					components.MakeLabel(fmt.Sprintf("Точность: %.1f%%  |  Криты: %d  |  Раундов: %d", resolvedRecord.Accuracy, state.TotalCrits, state.Round), t.TextSecondary),
 					components.MakeLabel(fmt.Sprintf("Урон нанесён: %d  |  Урон получен: %d", state.DamageDealt, state.DamageTaken), t.TextSecondary),
 				)
-				if hint := battleStatHint(state, resolvedRecord); hint != "" {
-					statsItems = append(statsItems, components.MakeLabel("💡 Подсказка: "+hint, t.Accent))
-				}
 			}
 
 			statsBox := container.NewVBox(statsItems...)
@@ -710,15 +650,13 @@ func (a *App) showBattleScreen() {
 		fieldCard := components.MakeCard(container.NewPadded(gridContainer))
 
 		logWidget := buildRoundLog()
-		bonusPanel := buildStatBonusPanel()
-
 		gridCol := container.NewVBox(
 			container.NewCenter(primaryStatus),
 			container.NewCenter(fieldCard),
 			container.NewCenter(secondaryStatus),
 			logWidget,
 		)
-		centerContent := container.NewBorder(nil, nil, nil, bonusPanel, gridCol)
+		centerContent := container.NewBorder(nil, nil, nil, nil, gridCol)
 		centerRef.Add(centerContent)
 
 		updateSelectionStatus := func() {
@@ -1050,17 +988,7 @@ func (a *App) showBossScreen() {
 			statsItems := []fyne.CanvasObject{}
 			if resolvedErr != nil {
 				statsItems = append(statsItems, components.MakeLabel("Ошибка: "+resolvedErr.Error(), t.Danger))
-			} else if state.Phase == boss.PhaseWin && resolvedRecord != nil {
-				if resolvedRecord.RewardTitle != "" {
-					statsItems = append(statsItems, components.MakeLabel("🏅 Титул: "+resolvedRecord.RewardTitle, t.Gold))
-				}
-				if resolvedRecord.RewardBadge != "" {
-					statsItems = append(statsItems, components.MakeLabel("🎖️ Бейдж: "+resolvedRecord.RewardBadge, t.Gold))
-				}
-				if resolvedRecord.UnlockedEnemyName != "" {
-					statsItems = append(statsItems, components.MakeLabel("🔓 Открыт: "+resolvedRecord.UnlockedEnemyName, t.Accent))
-				}
-			} else {
+			} else if state.Phase != boss.PhaseWin {
 				statsItems = append(statsItems, components.MakeLabel("Поражение не наказывается.", t.TextSecondary))
 			}
 			if resolvedRecord != nil {
@@ -1329,29 +1257,6 @@ func (a *App) buildBattleHistoryCard(b models.BattleRecord) *fyne.Container {
 	topRow := container.NewHBox(nameText, result, layout.NewSpacer(), dateText)
 	content := container.NewVBox(topRow, statsText)
 	return components.MakeCard(content)
-}
-
-func battleStatHint(state *models.BattleState, record *models.BattleRecord) string {
-	var hints []string
-	if record.Accuracy < 60 {
-		hints = append(hints, "🧠 Интеллект (больше времени запоминания)")
-	}
-	if state.TotalCrits == 0 {
-		hints = append(hints, "⚡ Ловкость (больше шанс критического удара)")
-	}
-	if state.DamageDealt < state.Enemy.HP/2 {
-		hints = append(hints, "💪 Сила (выше базовый урон)")
-	}
-	if state.PlayerHP == 0 {
-		hints = append(hints, "🛡️ Выносливость (больше HP и снижение входящего урона)")
-	}
-	if len(hints) == 0 {
-		return ""
-	}
-	if len(hints) > 2 {
-		hints = hints[:2]
-	}
-	return strings.Join(hints, ", ")
 }
 
 func cellSizeForGrid(win fyne.Window, grid int) float32 {

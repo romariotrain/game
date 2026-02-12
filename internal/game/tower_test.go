@@ -86,20 +86,24 @@ func zoneEnemies(t *testing.T, e *Engine, zone int) ([]models.Enemy, models.Enem
 
 func markDefeated(t *testing.T, e *Engine, enemyID int64) {
 	t.Helper()
-	existing, err := e.DB.GetBattleReward(e.Character.ID, enemyID)
+	defeated, err := e.DB.GetDefeatedEnemyIDs(e.Character.ID)
 	if err != nil {
-		t.Fatalf("get reward: %v", err)
+		t.Fatalf("get defeated ids: %v", err)
 	}
-	if existing != nil {
+	if defeated[enemyID] {
 		return
 	}
-	if err := e.DB.InsertBattleReward(&models.BattleReward{
-		CharID:  e.Character.ID,
-		EnemyID: enemyID,
-		Title:   "test",
-		Badge:   "test",
+	enemy, err := e.DB.GetEnemyByID(enemyID)
+	if err != nil {
+		t.Fatalf("get enemy by id: %v", err)
+	}
+	if err := e.DB.InsertBattle(&models.BattleRecord{
+		CharID:    e.Character.ID,
+		EnemyID:   enemyID,
+		EnemyName: enemy.Name,
+		Result:    models.BattleWin,
 	}); err != nil {
-		t.Fatalf("insert reward: %v", err)
+		t.Fatalf("insert battle win: %v", err)
 	}
 }
 
@@ -138,12 +142,12 @@ func TestTowerWinUnlocksNextEnemy(t *testing.T) {
 		t.Fatal("expected next enemy to differ from cleared enemy")
 	}
 
-	reward, err := e.DB.GetBattleReward(e.Character.ID, firstEnemyID)
+	defeated, err := e.DB.GetDefeatedEnemyIDs(e.Character.ID)
 	if err != nil {
-		t.Fatalf("get reward: %v", err)
+		t.Fatalf("get defeated ids: %v", err)
 	}
-	if reward == nil {
-		t.Fatal("expected first-win reward to be created")
+	if !defeated[firstEnemyID] {
+		t.Fatal("expected first enemy to be marked as defeated by battle win")
 	}
 
 	if next.Zone < current.Zone {

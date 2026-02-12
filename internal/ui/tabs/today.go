@@ -130,26 +130,7 @@ func buildCharacterCard(ctx *Context, level int, rank string, stats []models.Sta
 
 	metaRow := container.NewHBox(layout.NewSpacer(), rankLabel, levelLabel, expLabel, layout.NewSpacer())
 
-	// Active title selector
-	var titleRow fyne.CanvasObject
-	allTitles, _ := ctx.Engine.GetAllTitles()
-	if len(allTitles) > 0 {
-		sel := widget.NewSelect(allTitles, func(chosen string) {
-			_ = ctx.Engine.SetActiveTitle(chosen)
-		})
-		sel.PlaceHolder = "Нет титула"
-		if ctx.Engine.Character.ActiveTitle != "" {
-			sel.SetSelected(ctx.Engine.Character.ActiveTitle)
-		}
-		titleRow = sel
-	} else {
-		placeholder := canvas.NewText("Нет титулов", t.TextMuted)
-		placeholder.TextSize = components.TextBodySM
-		placeholder.Alignment = fyne.TextAlignCenter
-		titleRow = container.NewHBox(layout.NewSpacer(), placeholder, layout.NewSpacer())
-	}
-
-	leftCol := container.NewVBox(portraitBox, metaRow, titleRow)
+	leftCol := container.NewVBox(portraitBox, metaRow)
 
 	// --- Right column: stats with colored left bars ---
 	statsBlock := buildStatBlockWithBars(stats)
@@ -341,26 +322,34 @@ func buildEnemyDayCard(ctx *Context) *fyne.Container {
 	// Enemy image — 200x200
 	const enemyImgSize float32 = 200
 	tk := components.T()
-	enemyIconBg := canvas.NewRectangle(tk.BGPanel)
-	enemyIconBg.CornerRadius = components.RadiusLG
-	enemyIconBg.SetMinSize(fyne.NewSize(enemyImgSize, enemyImgSize))
-	enemyIconBg.StrokeWidth = components.BorderThin
-	enemyIconBg.StrokeColor = tk.Border
+	enemySize := fyne.NewSize(enemyImgSize, enemyImgSize)
+	enemyIconFrame := canvas.NewRectangle(color.Transparent)
+	enemyIconFrame.CornerRadius = components.RadiusLG
+	enemyIconFrame.SetMinSize(enemySize)
+	enemyIconFrame.StrokeWidth = components.BorderThin
+	enemyIconFrame.StrokeColor = tk.Border
 
 	var enemyIconBox fyne.CanvasObject
 	if enemy != nil {
 		if imgPath := resolveEnemyImagePath(*enemy); imgPath != "" {
-			img := canvas.NewImageFromFile(imgPath)
-			img.FillMode = canvas.ImageFillContain
-			img.SetMinSize(fyne.NewSize(enemyImgSize, enemyImgSize))
-			enemyIconBox = container.NewStack(enemyIconBg, img)
+			if roundedImg, err := components.RoundedImageFromFile(imgPath, enemySize, components.RadiusLG); err == nil {
+				enemyIconBox = container.NewStack(roundedImg, enemyIconFrame)
+			} else {
+				img := canvas.NewImageFromFile(imgPath)
+				img.FillMode = canvas.ImageFillStretch
+				img.SetMinSize(enemySize)
+				enemyIconBox = container.NewStack(img, enemyIconFrame)
+			}
 		}
 	}
 	if enemyIconBox == nil {
+		enemyIconBg := canvas.NewRectangle(tk.BGPanel)
+		enemyIconBg.CornerRadius = components.RadiusLG
+		enemyIconBg.SetMinSize(enemySize)
 		fallback := canvas.NewImageFromResource(theme.VisibilityIcon())
 		fallback.FillMode = canvas.ImageFillContain
 		fallback.SetMinSize(fyne.NewSize(80, 80))
-		enemyIconBox = container.NewStack(enemyIconBg, container.NewCenter(fallback))
+		enemyIconBox = container.NewStack(enemyIconBg, container.NewCenter(fallback), enemyIconFrame)
 	}
 
 	// Enemy name + rank badge
@@ -403,12 +392,6 @@ func buildEnemyDayCard(ctx *Context) *fyne.Container {
 	if enemy != nil {
 		diffSection := buildDifficultySection(ctx, enemy)
 		infoItems = append(infoItems, diffSection)
-	}
-
-	// First-win reward
-	if enemy != nil {
-		rewardSection := buildFirstWinReward(ctx, enemy)
-		infoItems = append(infoItems, rewardSection)
 	}
 
 	enemyInfo := container.NewVBox(append([]fyne.CanvasObject{nameRankRow}, infoItems...)...)
@@ -519,50 +502,20 @@ func buildDifficultySection(ctx *Context, enemy *models.Enemy) fyne.CanvasObject
 	return container.NewVBox(headerRow, bar)
 }
 
-// buildFirstWinReward shows first-win rewards, or ✓ if already defeated.
-func buildFirstWinReward(ctx *Context, enemy *models.Enemy) fyne.CanvasObject {
-	reward, err := ctx.Engine.DB.GetBattleReward(ctx.Engine.Character.ID, enemy.ID)
-	if err == nil && reward != nil {
-		// Already defeated
-		defeated := canvas.NewText("✓ Побеждён", components.T().Success)
-		defeated.TextSize = 12
-		defeated.TextStyle = fyne.TextStyle{Bold: true}
-		return container.NewHBox(defeated)
-	}
-
-	// Not yet defeated — show expected rewards
-	title := fmt.Sprintf("Покоритель: %s", enemy.Name)
-	badge := fmt.Sprintf("Знак: %s", enemy.Name)
-	icon := canvas.NewText("🏆", components.T().Gold)
-	icon.TextSize = 12
-	label := components.MakeLabel("Первая победа:", components.T().TextSecondary)
-	label.TextSize = 11
-	titleLabel := canvas.NewText(title, components.T().Gold)
-	titleLabel.TextSize = 11
-	titleLabel.TextStyle = fyne.TextStyle{Bold: true}
-	badgeLabel := components.MakeLabel(badge, components.T().Gold)
-	badgeLabel.TextSize = 11
-	unlockLabel := components.MakeLabel("Продвигает прогресс зоны", components.T().Accent)
-	unlockLabel.TextSize = 11
-
-	return container.NewVBox(
-		container.NewHBox(icon, label),
-		titleLabel,
-		badgeLabel,
-		unlockLabel,
-	)
-}
-
 func zoneBiomeName(zone int) string {
 	switch zone {
 	case 1:
-		return "Forgotten Ruins"
+		return "Туманные Болота"
 	case 2:
-		return "Abyss Corridors"
+		return "Забытые Руины"
 	case 3:
-		return "Monarch Domain"
+		return "Ледяные Пики"
+	case 4:
+		return "Пепельные Разломы"
+	case 5:
+		return "Цитадель Бездны"
 	default:
-		return "Unknown Zone"
+		return "Неизвестная зона"
 	}
 }
 

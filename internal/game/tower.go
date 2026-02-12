@@ -193,15 +193,7 @@ func (e *Engine) spendBattleAttempt() error {
 }
 
 func (e *Engine) defeatedEnemyIDs(userID int64) (map[int64]bool, error) {
-	rewards, err := e.DB.GetAllBattleRewards(userID)
-	if err != nil {
-		return nil, err
-	}
-	defeated := make(map[int64]bool, len(rewards))
-	for _, reward := range rewards {
-		defeated[reward.EnemyID] = true
-	}
-	return defeated, nil
+	return e.DB.GetDefeatedEnemyIDs(userID)
 }
 
 func isEnemyBoss(enemy models.Enemy) bool {

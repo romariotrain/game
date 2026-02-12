@@ -96,34 +96,6 @@ func (e *Engine) FinishBoss(state *boss.State) (*models.BattleRecord, error) {
 		Dodges:       0,
 	}
 
-	existing, err := e.DB.GetBattleReward(e.Character.ID, state.Enemy.ID)
-	if err != nil {
-		return nil, err
-	}
-	if existing == nil {
-		title := fmt.Sprintf("Босс-победа: %s", state.Enemy.Name)
-		badge := fmt.Sprintf("Босс: %s", state.Enemy.Name)
-		reward := &models.BattleReward{
-			CharID:  e.Character.ID,
-			EnemyID: state.Enemy.ID,
-			Title:   title,
-			Badge:   badge,
-		}
-		if err := e.DB.InsertBattleReward(reward); err != nil {
-			return nil, err
-		}
-		record.RewardTitle = title
-		record.RewardBadge = badge
-
-		nextEnemy, err := e.GetNextEnemyForPlayer()
-		if err != nil {
-			return nil, err
-		}
-		if nextEnemy != nil && nextEnemy.ID != state.Enemy.ID {
-			record.UnlockedEnemyName = nextEnemy.Name
-		}
-	}
-
 	if err := e.UnlockAchievement(AchievementFirstBattle); err != nil {
 		return nil, err
 	}

@@ -368,12 +368,13 @@ func (db *DB) NormalizeEnemyZones() error {
 
 func (db *DB) GetDefeatedEnemies(charID int64) ([]models.DefeatedEnemy, error) {
 	rows, err := db.conn.Query(`
-		SELECT e.id, e.name, e.description, e.rank, e.zone, e.is_boss, br.awarded_at
-		FROM battle_rewards br
-		JOIN enemies e ON e.id = br.enemy_id
-		WHERE br.char_id = ?
-		ORDER BY e.zone ASC, e.is_boss ASC, e.id ASC
-	`, charID)
+		SELECT e.id, e.name, e.description, e.rank, e.zone, e.is_boss, MAX(b.fought_at) AS defeated_at
+		FROM battles b
+		JOIN enemies e ON e.id = b.enemy_id
+		WHERE b.char_id = ? AND b.result = ?
+		GROUP BY e.id, e.name, e.description, e.rank, e.zone, e.is_boss, e.level
+		ORDER BY e.zone ASC, e.level ASC, e.is_boss ASC, e.id ASC
+	`, charID, string(models.BattleWin))
 	if err != nil {
 		return nil, err
 	}
@@ -383,15 +384,55 @@ func (db *DB) GetDefeatedEnemies(charID int64) ([]models.DefeatedEnemy, error) {
 	for rows.Next() {
 		var item models.DefeatedEnemy
 		var isBoss int
-		var defeatedAt time.Time
+		var defeatedAt sql.NullString
 		if err := rows.Scan(&item.EnemyID, &item.Name, &item.Description, &item.Rank, &item.Zone, &isBoss, &defeatedAt); err != nil {
 			return nil, err
 		}
 		item.IsBoss = isBoss == 1
-		item.DefeatedAt = &defeatedAt
+		if ts, ok := parseSQLiteTime(defeatedAt.String); ok {
+			t := ts
+			item.DefeatedAt = &t
+		}
 		defeated = append(defeated, item)
 	}
 	return defeated, nil
+}
+
+func (db *DB) GetDefeatedEnemyIDs(charID int64) (map[int64]bool, error) {
+	rows, err := db.conn.Query(
+		"SELECT DISTINCT enemy_id FROM battles WHERE char_id = ? AND result = ?",
+		charID, string(models.BattleWin),
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	defeated := make(map[int64]bool)
+	for rows.Next() {
+		var enemyID int64
+		if err := rows.Scan(&enemyID); err != nil {
+			return nil, err
+		}
+		defeated[enemyID] = true
+	}
+	return defeated, nil
+}
+
+func parseSQLiteTime(raw string) (time.Time, bool) {
+	layouts := []string{
+		"2006-01-02 15:04:05.999999999-07:00",
+		"2006-01-02 15:04:05.999999999",
+		"2006-01-02 15:04:05",
+		time.RFC3339Nano,
+		time.RFC3339,
+	}
+	for _, layout := range layouts {
+		if parsed, err := time.Parse(layout, raw); err == nil {
+			return parsed, true
+		}
+	}
+	return time.Time{}, false
 }
 
 func boolToInt(v bool) int {
