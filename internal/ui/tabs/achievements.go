@@ -157,8 +157,8 @@ func achievementIcon(key string) string {
 		return "🗡️"
 	case "streak_7":
 		return "🔥"
-	case "first_dungeon":
-		return "🏰"
+	case "first_expedition":
+		return "🧭"
 	default:
 		return "🏆"
 	}

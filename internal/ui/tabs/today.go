@@ -601,8 +601,8 @@ func buildTodayQuestCard(ctx *Context, q models.Quest) *fyne.Container {
 		lbl := components.MakeLabel("Ежедневное", components.T().Blue)
 		lbl.TextSize = 11
 		typeIndicator = lbl
-	} else if q.DungeonID != nil {
-		lbl := components.MakeLabel("Данж", components.T().Purple)
+	} else if q.ExpeditionID != nil {
+		lbl := components.MakeLabel("Экспедиция", components.T().Purple)
 		lbl.TextSize = 11
 		typeIndicator = lbl
 	} else {
@@ -636,13 +636,12 @@ func buildTodayQuestCard(ctx *Context, q models.Quest) *fyne.Container {
 			}
 		}
 
-		if q.DungeonID != nil {
-			done, err := ctx.Engine.CheckDungeonCompletion(*q.DungeonID)
-			if err == nil && done {
-				if err := ctx.Engine.CompleteDungeon(*q.DungeonID); err == nil {
-					msg += "\n\nДАНЖ ПРОЙДЕН! Получена награда!"
-				}
+		if result.ExpeditionCompleted {
+			name := strings.TrimSpace(result.ExpeditionName)
+			if name == "" {
+				name = "Экспедиция"
 			}
+			msg += fmt.Sprintf("\n\nЭКСПЕДИЦИЯ ЗАВЕРШЕНА: %s", name)
 		}
 		if text := strings.TrimSpace(q.Congratulations); text != "" {
 			msg += "\n\n" + text

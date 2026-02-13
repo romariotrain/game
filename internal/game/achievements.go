@@ -7,10 +7,10 @@ import (
 )
 
 const (
-	AchievementFirstTask    = "first_task"
-	AchievementFirstBattle  = "first_battle"
-	AchievementStreak7      = "streak_7"
-	AchievementFirstDungeon = "first_dungeon"
+	AchievementFirstTask       = "first_task"
+	AchievementFirstBattle     = "first_battle"
+	AchievementStreak7         = "streak_7"
+	AchievementFirstExpedition = "first_expedition"
 )
 
 func defaultAchievements() []models.Achievement {
@@ -34,10 +34,10 @@ func defaultAchievements() []models.Achievement {
 			Category:    "streak",
 		},
 		{
-			Key:         AchievementFirstDungeon,
-			Title:       "Первый данж",
-			Description: "Первый закрытый данж в истории охотника.",
-			Category:    "dungeon",
+			Key:         AchievementFirstExpedition,
+			Title:       "Первая экспедиция",
+			Description: "Первая завершённая экспедиция в истории охотника.",
+			Category:    "expedition",
 		},
 	}
 }

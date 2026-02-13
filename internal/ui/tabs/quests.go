@@ -361,7 +361,7 @@ func classifyQuestJournal(q models.Quest) string {
 	if q.IsDaily {
 		return "daily"
 	}
-	if q.DungeonID != nil || q.Rank == models.RankA || q.Rank == models.RankS || q.Exp >= 40 {
+	if q.ExpeditionID != nil || q.Rank == models.RankA || q.Rank == models.RankS || q.Exp >= 40 {
 		return "longterm"
 	}
 	return "main"
@@ -511,10 +511,10 @@ func buildQuestCardClassic(ctx *Context, q models.Quest) *fyne.Container {
 		dailyLabel := components.MakeLabel("Ежедневное", t.Blue)
 		dailyLabel.TextSize = components.TextBodySM
 		dailyIndicator = dailyLabel
-	} else if q.DungeonID != nil {
-		dungeonLabel := components.MakeLabel("Данж", t.Purple)
-		dungeonLabel.TextSize = components.TextBodySM
-		dailyIndicator = dungeonLabel
+	} else if q.ExpeditionID != nil {
+		expeditionLabel := components.MakeLabel("Экспедиция", t.Purple)
+		expeditionLabel.TextSize = components.TextBodySM
+		dailyIndicator = expeditionLabel
 	} else {
 		dailyIndicator = layout.NewSpacer()
 	}
@@ -576,8 +576,8 @@ func buildQuestCardSystem(ctx *Context, q models.Quest) *fyne.Container {
 	tag := ""
 	if q.IsDaily {
 		tag = "Ежедневное"
-	} else if q.DungeonID != nil {
-		tag = "Данж"
+	} else if q.ExpeditionID != nil {
+		tag = "Экспедиция"
 	}
 
 	onComplete := func() {
@@ -647,13 +647,12 @@ func completeQuest(ctx *Context, q models.Quest) {
 		}
 	}
 
-	if q.DungeonID != nil {
-		done, err := ctx.Engine.CheckDungeonCompletion(*q.DungeonID)
-		if err == nil && done {
-			if err := ctx.Engine.CompleteDungeon(*q.DungeonID); err == nil {
-				msg += "\n\nДАНЖ ПРОЙДЕН! Получена награда!"
-			}
+	if result.ExpeditionCompleted {
+		name := strings.TrimSpace(result.ExpeditionName)
+		if name == "" {
+			name = "Экспедиция"
 		}
+		msg += fmt.Sprintf("\n\nЭКСПЕДИЦИЯ ЗАВЕРШЕНА: %s", name)
 	}
 	if text := strings.TrimSpace(q.Congratulations); text != "" {
 		msg += "\n\n" + text
@@ -666,7 +665,7 @@ func completeQuest(ctx *Context, q models.Quest) {
 		return
 	}
 	RefreshQuests(ctx)
-	RefreshDungeons(ctx)
+	RefreshExpeditions(ctx)
 }
 
 func parseIntWithDefault(raw string, def int) int {

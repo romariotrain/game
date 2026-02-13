@@ -63,22 +63,23 @@ func (db *DB) migrate() error {
 		UNIQUE(char_id, stat_type)
 	);
 
-	CREATE TABLE IF NOT EXISTS quests (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		char_id INTEGER NOT NULL REFERENCES character(id),
-		title TEXT NOT NULL,
-		description TEXT NOT NULL DEFAULT '',
+		CREATE TABLE IF NOT EXISTS quests (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			char_id INTEGER NOT NULL REFERENCES character(id),
+			title TEXT NOT NULL,
+			description TEXT NOT NULL DEFAULT '',
 		congratulations TEXT NOT NULL DEFAULT '',
 		exp INTEGER NOT NULL DEFAULT 20,
 		rank TEXT NOT NULL DEFAULT 'E',
 		target_stat TEXT NOT NULL,
 		status TEXT NOT NULL DEFAULT 'active',
-		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		completed_at DATETIME,
-		is_daily INTEGER NOT NULL DEFAULT 0,
-		template_id INTEGER,
-		dungeon_id INTEGER
-	);
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			completed_at DATETIME,
+			is_daily INTEGER NOT NULL DEFAULT 0,
+			template_id INTEGER,
+			expedition_id INTEGER,
+			expedition_task_id INTEGER
+		);
 
 	CREATE TABLE IF NOT EXISTS skills (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -114,33 +115,39 @@ func (db *DB) migrate() error {
 		UNIQUE(char_id, date)
 	);
 
-	CREATE TABLE IF NOT EXISTS dungeons (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		name TEXT NOT NULL,
-		description TEXT NOT NULL DEFAULT '',
-		requirements_json TEXT NOT NULL DEFAULT '[]',
-		status TEXT NOT NULL DEFAULT 'locked',
-		reward_title TEXT NOT NULL DEFAULT '',
-		reward_exp INTEGER NOT NULL DEFAULT 0
-	);
+		CREATE TABLE IF NOT EXISTS expeditions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			description TEXT NOT NULL DEFAULT '',
+			deadline DATETIME,
+			reward_exp INTEGER NOT NULL DEFAULT 0,
+			reward_stats TEXT NOT NULL DEFAULT '{}',
+			is_repeatable INTEGER NOT NULL DEFAULT 0,
+			status TEXT NOT NULL DEFAULT 'active',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
 
-	CREATE TABLE IF NOT EXISTS dungeon_quests (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		dungeon_id INTEGER NOT NULL REFERENCES dungeons(id),
-		title TEXT NOT NULL,
-		description TEXT NOT NULL DEFAULT '',
-		exp INTEGER NOT NULL DEFAULT 20,
-		rank TEXT NOT NULL DEFAULT 'E',
-		target_stat TEXT NOT NULL
-	);
+		CREATE TABLE IF NOT EXISTS expedition_tasks (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			expedition_id INTEGER NOT NULL REFERENCES expeditions(id),
+			title TEXT NOT NULL,
+			description TEXT NOT NULL DEFAULT '',
+			is_completed INTEGER NOT NULL DEFAULT 0,
+			progress_current INTEGER NOT NULL DEFAULT 0,
+			progress_target INTEGER NOT NULL DEFAULT 1,
+			reward_exp INTEGER NOT NULL DEFAULT 20,
+			target_stat TEXT NOT NULL DEFAULT 'strength',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
 
-	CREATE TABLE IF NOT EXISTS completed_dungeons (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		char_id INTEGER NOT NULL REFERENCES character(id),
-		dungeon_id INTEGER NOT NULL REFERENCES dungeons(id),
-		completed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		earned_title TEXT NOT NULL DEFAULT ''
-	);
+		CREATE TABLE IF NOT EXISTS completed_expeditions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			char_id INTEGER NOT NULL REFERENCES character(id),
+			expedition_id INTEGER NOT NULL REFERENCES expeditions(id),
+			completed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
 
 	CREATE TABLE IF NOT EXISTS enemies (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -223,9 +230,12 @@ func (db *DB) migrate() error {
 		"ALTER TABLE enemies ADD COLUMN floor INTEGER NOT NULL DEFAULT 1",
 		"ALTER TABLE quests ADD COLUMN congratulations TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE quests ADD COLUMN exp INTEGER NOT NULL DEFAULT 20",
+		"ALTER TABLE quests ADD COLUMN expedition_id INTEGER",
+		"ALTER TABLE quests ADD COLUMN expedition_task_id INTEGER",
 		"ALTER TABLE daily_quest_templates ADD COLUMN congratulations TEXT NOT NULL DEFAULT ''",
 		"ALTER TABLE daily_quest_templates ADD COLUMN exp INTEGER NOT NULL DEFAULT 20",
-		"ALTER TABLE dungeon_quests ADD COLUMN exp INTEGER NOT NULL DEFAULT 20",
+		"ALTER TABLE expedition_tasks ADD COLUMN reward_exp INTEGER NOT NULL DEFAULT 20",
+		"ALTER TABLE expedition_tasks ADD COLUMN target_stat TEXT NOT NULL DEFAULT 'strength'",
 		"ALTER TABLE character ADD COLUMN active_title TEXT NOT NULL DEFAULT ''",
 		`UPDATE quests SET exp = CASE UPPER(rank)
 			WHEN 'S' THEN 350
@@ -243,17 +253,17 @@ func (db *DB) migrate() error {
 			WHEN 'D' THEN 40
 			ELSE 20
 		END WHERE exp <= 0`,
-		`UPDATE dungeon_quests SET exp = CASE UPPER(rank)
-			WHEN 'S' THEN 350
-			WHEN 'A' THEN 200
-			WHEN 'B' THEN 120
-			WHEN 'C' THEN 70
-			WHEN 'D' THEN 40
-			ELSE 20
-		END WHERE exp <= 0`,
+		"UPDATE quests SET expedition_id = dungeon_id WHERE expedition_id IS NULL AND dungeon_id IS NOT NULL",
 	}
 	for _, m := range migrations {
 		db.conn.Exec(m) // ignore errors (column already exists)
+	}
+
+	if err := db.migrateDungeonDataToExpeditions(); err != nil {
+		return err
+	}
+	if err := db.migrateQuestDungeonLinksToExpeditions(); err != nil {
+		return err
 	}
 
 	if err := db.addColumnIfMissing("enemies", "zone", "INTEGER NOT NULL DEFAULT 1"); err != nil {
@@ -288,6 +298,95 @@ func (db *DB) migrate() error {
 	}
 
 	return nil
+}
+
+func (db *DB) migrateDungeonDataToExpeditions() error {
+	if !db.tableExists("dungeons") {
+		return nil
+	}
+
+	var expeditionCount int
+	if err := db.conn.QueryRow("SELECT COUNT(*) FROM expeditions").Scan(&expeditionCount); err != nil {
+		return err
+	}
+	if expeditionCount > 0 {
+		return nil
+	}
+
+	_, err := db.conn.Exec(`
+		INSERT INTO expeditions (id, name, description, deadline, reward_exp, reward_stats, is_repeatable, status, created_at, updated_at)
+		SELECT
+			id,
+			name,
+			description,
+			NULL AS deadline,
+			reward_exp,
+			'{}' AS reward_stats,
+			0 AS is_repeatable,
+			CASE status
+				WHEN 'completed' THEN 'completed'
+				ELSE 'active'
+			END AS status,
+			CURRENT_TIMESTAMP,
+			CURRENT_TIMESTAMP
+		FROM dungeons
+	`)
+	if err != nil {
+		return err
+	}
+
+	if db.tableExists("dungeon_quests") {
+		_, err = db.conn.Exec(`
+			INSERT INTO expedition_tasks (
+				expedition_id, title, description, is_completed, progress_current, progress_target,
+				reward_exp, target_stat, created_at, updated_at
+			)
+			SELECT
+				dq.dungeon_id,
+				dq.title,
+				dq.description,
+				CASE
+					WHEN e.status = 'completed' THEN 1
+					ELSE 0
+				END AS is_completed,
+				CASE
+					WHEN e.status = 'completed' THEN 1
+					ELSE 0
+				END AS progress_current,
+				1 AS progress_target,
+				COALESCE(dq.exp, 20) AS reward_exp,
+				COALESCE(dq.target_stat, 'strength') AS target_stat,
+				CURRENT_TIMESTAMP,
+				CURRENT_TIMESTAMP
+			FROM dungeon_quests dq
+			JOIN expeditions e ON e.id = dq.dungeon_id
+			ORDER BY dq.id
+		`)
+		if err != nil {
+			return err
+		}
+	}
+
+	if db.tableExists("completed_dungeons") {
+		_, err = db.conn.Exec(`
+			INSERT OR IGNORE INTO completed_expeditions (char_id, expedition_id, completed_at)
+			SELECT char_id, dungeon_id, completed_at
+			FROM completed_dungeons
+		`)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (db *DB) migrateQuestDungeonLinksToExpeditions() error {
+	if !db.columnExistsFast("quests", "expedition_id") || !db.columnExistsFast("quests", "dungeon_id") {
+		return nil
+	}
+	_, err := db.conn.Exec("UPDATE quests SET expedition_id = dungeon_id WHERE expedition_id IS NULL AND dungeon_id IS NOT NULL")
+	return err
 }
 
 func (db *DB) addColumnIfMissing(table string, column string, definition string) error {
@@ -325,4 +424,21 @@ func (db *DB) columnExists(table string, column string) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+func (db *DB) columnExistsFast(table string, column string) bool {
+	ok, err := db.columnExists(table, column)
+	if err != nil {
+		return false
+	}
+	return ok
+}
+
+func (db *DB) tableExists(name string) bool {
+	var count int
+	err := db.conn.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?", name).Scan(&count)
+	if err != nil {
+		return false
+	}
+	return count > 0
 }

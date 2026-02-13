@@ -18,14 +18,14 @@ type Context struct {
 	CharacterPanel    *fyne.Container
 	QuestsPanel       *fyne.Container
 	StatsPanel        *fyne.Container
-	DungeonsPanel     *fyne.Container
+	ExpeditionsPanel  *fyne.Container
 	AchievementsPanel *fyne.Container
 
 	RefreshAll          func()
 	RefreshCharacter    func()
 	RefreshQuests       func()
 	RefreshStats        func()
-	RefreshDungeons     func()
+	RefreshExpeditions  func()
 	RefreshAchievements func()
 	RefreshHistory      func()
 	StartBattle         func(enemy models.Enemy)

@@ -5,11 +5,11 @@ Desktop TODO-приложение с RPG-прокачкой.
 
 ## Что реализовано сейчас
 
-- EXP начисляется только за квесты и данжи.
+- EXP начисляется только за квесты и экспедиции.
 - Бои не дают EXP, тратят попытки и дают боевые награды (титулы/бейджи/unlock).
 - Вкладка `Сегодня` собрана как компактный игровой цикл: персонаж -> следующий враг -> streak -> квесты.
 - Запуск боёв выполняется только с вкладки `Сегодня` (карточка следующего врага).
-- Есть вкладки `Сегодня`, `Задания`, `Прогресс`, `Достижения`, `Данжи`.
+- Есть вкладки `Сегодня`, `Задания`, `Прогресс`, `Достижения`, `Экспедиции`.
 - Для UI есть 2 визуальных режима (`System HUD` / `Classic`) с переключением через меню `Вид`.
 - Данные хранятся в SQLite (`~/.solo-leveling/game.db`), миграции создаются автоматически.
 
@@ -50,12 +50,12 @@ CGO_ENABLED=1 go run .
 - `Задания`
 - `Прогресс`
 - `Достижения`
-- `Данжи`
+- `Экспедиции`
 
 `MinimalMode=false`:
 - `Охотник`
 - `Задания`
-- `Данжи`
+- `Экспедиции`
 - `Статистика`
 - `Достижения`
 - `История`
@@ -156,15 +156,16 @@ CGO_ENABLED=1 go run .
   - бейдж,
   - разблокировка следующего врага.
 
-## Данжи
+## Экспедиции
 
-- Пресеты инициализируются при старте (`InitDungeons`).
-- Статусы: `locked -> available -> in_progress -> completed`.
-- Вход в данж создаёт набор связанных квестов.
-- За завершение данжа:
-  - бонусный EXP во все статы,
-  - титул данжа,
-  - достижение `first_dungeon`.
+- Пресеты инициализируются при старте (`InitExpeditions`).
+- Статусы: `active -> completed/failed`.
+- Запуск экспедиции создаёт связанные квесты по задачам.
+- Прогресс экспедиции считается как процент завершённых задач.
+- За завершение экспедиции:
+  - бонусный EXP,
+  - `reward_stats`,
+  - достижение `first_expedition`.
 
 ## Достижения
 
@@ -172,7 +173,7 @@ CGO_ENABLED=1 go run .
 - `first_task`
 - `first_battle`
 - `streak_7`
-- `first_dungeon`
+- `first_expedition`
 
 UI: вкладка `Достижения` (`internal/ui/tabs/achievements.go`).
 
@@ -191,6 +192,7 @@ type Features struct {
     MinimalMode bool
     Combat      bool
     Events      bool
+    FailExpiredExpeditions bool
 }
 ```
 
@@ -198,6 +200,7 @@ type Features struct {
 - `MinimalMode = true`
 - `Combat = true`
 - `Events = false`
+- `FailExpiredExpeditions = true`
 
 ## База данных (18 таблиц)
 
@@ -211,9 +214,9 @@ type Features struct {
 - `skills`
 - `daily_quest_templates`
 - `daily_activity`
-- `dungeons`
-- `dungeon_quests`
-- `completed_dungeons`
+- `expeditions`
+- `expedition_tasks`
+- `completed_expeditions`
 - `enemies`
 - `streak_titles`
 - `battles`

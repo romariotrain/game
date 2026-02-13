@@ -30,11 +30,11 @@ type App struct {
 	features config.Features
 	tabsCtx  *tabs.Context
 
-	characterPanel *fyne.Container
-	questsPanel    *fyne.Container
-	historyPanel   *fyne.Container
-	statsPanel     *fyne.Container
-	dungeonsPanel  *fyne.Container
+	characterPanel   *fyne.Container
+	questsPanel      *fyne.Container
+	historyPanel     *fyne.Container
+	statsPanel       *fyne.Container
+	expeditionsPanel *fyne.Container
 
 	// Battle state
 	currentBattle *models.BattleState
@@ -72,8 +72,8 @@ func (a *App) Run() {
 		RefreshStats: func() {
 			a.refreshStatsPanel()
 		},
-		RefreshDungeons: func() {
-			a.refreshDungeonsPanel()
+		RefreshExpeditions: func() {
+			a.refreshExpeditionsPanel()
 		},
 		RefreshAchievements: func() {
 			a.refreshAchievementsPanel()
@@ -138,17 +138,17 @@ func (a *App) buildMainLayout() fyne.CanvasObject {
 		questsTab := container.NewTabItem("Задания", tabs.BuildQuests(a.tabsCtx))
 		progressTab := container.NewTabItem("Прогресс", tabs.BuildProgress(a.tabsCtx))
 		achievementsTab := container.NewTabItem("Достижения", tabs.BuildAchievements(a.tabsCtx))
-		dungeonsTab := container.NewTabItem("Данжи", tabs.BuildDungeons(a.tabsCtx))
-		tabItems := []*container.TabItem{todayTab, questsTab, progressTab, achievementsTab, dungeonsTab}
+		expeditionsTab := container.NewTabItem("Экспедиции", tabs.BuildExpeditions(a.tabsCtx))
+		tabItems := []*container.TabItem{todayTab, questsTab, progressTab, achievementsTab, expeditionsTab}
 		appTabs = container.NewAppTabs(tabItems...)
 	} else {
 		charTab := container.NewTabItem("Охотник", tabs.BuildToday(a.tabsCtx))
 		questsTab := container.NewTabItem("Задания", tabs.BuildQuests(a.tabsCtx))
-		dungeonsTab := container.NewTabItem("Данжи", tabs.BuildDungeons(a.tabsCtx))
+		expeditionsTab := container.NewTabItem("Экспедиции", tabs.BuildExpeditions(a.tabsCtx))
 		statsTab := container.NewTabItem("Статистика", tabs.BuildProgress(a.tabsCtx))
 		achievementsTab := container.NewTabItem("Достижения", tabs.BuildAchievements(a.tabsCtx))
 
-		tabItems := []*container.TabItem{charTab, questsTab, dungeonsTab, statsTab, achievementsTab}
+		tabItems := []*container.TabItem{charTab, questsTab, expeditionsTab, statsTab, achievementsTab}
 		tabItems = append(tabItems,
 			container.NewTabItem("История", a.buildHistoryTab()),
 		)
@@ -200,7 +200,7 @@ func (a *App) refreshCharacterPanel() {
 	tabs.RefreshToday(a.tabsCtx)
 }
 
-func (a *App) buildCharacterCard(level int, rank string, stats []models.StatLevel, completedDungeons []models.CompletedDungeon) *fyne.Container {
+func (a *App) buildCharacterCard(level int, rank string, stats []models.StatLevel, completedExpeditions []models.CompletedExpedition) *fyne.Container {
 	t := components.T()
 	nameText := components.MakeTitle(a.engine.Character.Name, t.Gold, 24)
 	editBtn := widget.NewButtonWithIcon("", theme.DocumentCreateIcon(), func() {
@@ -259,7 +259,7 @@ func (a *App) refreshAll() {
 	a.refreshHistoryPanel()
 	a.refreshStatsPanel()
 	a.refreshAchievementsPanel()
-	a.refreshDungeonsPanel()
+	a.refreshExpeditionsPanel()
 }
 
 // ================================================================
@@ -316,8 +316,8 @@ func (a *App) buildHistoryCard(q models.Quest) *fyne.Container {
 		lbl := components.MakeLabel("Ежедневное", t.Blue)
 		lbl.TextSize = components.TextBodySM
 		typeIndicator = lbl
-	} else if q.DungeonID != nil {
-		lbl := components.MakeLabel("Данж", t.Purple)
+	} else if q.ExpeditionID != nil {
+		lbl := components.MakeLabel("Экспедиция", t.Purple)
 		lbl.TextSize = components.TextBodySM
 		typeIndicator = lbl
 	} else {
@@ -353,16 +353,16 @@ func (a *App) refreshAchievementsPanel() {
 }
 
 // ================================================================
-// Dungeons Tab
+// Expeditions Tab
 // ================================================================
 
-func (a *App) buildDungeonsTab() fyne.CanvasObject {
-	a.dungeonsPanel = a.tabsCtx.DungeonsPanel
-	return tabs.BuildDungeons(a.tabsCtx)
+func (a *App) buildExpeditionsTab() fyne.CanvasObject {
+	a.expeditionsPanel = a.tabsCtx.ExpeditionsPanel
+	return tabs.BuildExpeditions(a.tabsCtx)
 }
 
-func (a *App) refreshDungeonsPanel() {
-	tabs.RefreshDungeons(a.tabsCtx)
+func (a *App) refreshExpeditionsPanel() {
+	tabs.RefreshExpeditions(a.tabsCtx)
 }
 
 func (a *App) startBattle(enemy models.Enemy) {

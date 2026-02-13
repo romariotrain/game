@@ -40,13 +40,14 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize game engine: %v", err)
 	}
+	features := config.DefaultFeatures()
 
-	// Seed preset dungeons if not yet created
-	if err := engine.InitDungeons(); err != nil {
-		log.Printf("Warning: failed to init dungeons: %v", err)
+	// Seed preset expeditions if not yet created.
+	if err := engine.InitExpeditions(); err != nil {
+		log.Printf("Warning: failed to init expeditions: %v", err)
 	}
 
-	// Auto-fail unfinished non-dungeon quests from previous days.
+	// Auto-fail unfinished non-expedition quests from previous days.
 	failed, err := engine.AutoFailUnfinishedQuests()
 	if err != nil {
 		log.Printf("Warning: failed to auto-fail stale quests: %v", err)
@@ -64,9 +65,9 @@ func main() {
 		log.Printf("Spawned %d daily quests", spawned)
 	}
 
-	// Refresh dungeon availability based on current stats
-	if err := engine.RefreshDungeonStatuses(); err != nil {
-		log.Printf("Warning: failed to refresh dungeon statuses: %v", err)
+	// Apply expedition status updates (deadline fail / auto-complete).
+	if err := engine.RefreshExpeditionStatuses(features.FailExpiredExpeditions); err != nil {
+		log.Printf("Warning: failed to refresh expedition statuses: %v", err)
 	}
 
 	// Seed preset enemies if not yet created
@@ -77,7 +78,6 @@ func main() {
 	application := fyneApp.New()
 	application.Settings().SetTheme(&ui.SoloLevelingTheme{})
 
-	features := config.DefaultFeatures()
 	appUI := ui.NewApp(application, engine, features)
 	appUI.Run()
 }

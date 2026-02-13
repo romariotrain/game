@@ -115,7 +115,7 @@ func (db *DB) SetActiveTitle(charID int64, title string) error {
 	return err
 }
 
-// GetAllTitles collects every title the character has earned (battle rewards, streak titles, dungeon titles).
+// GetAllTitles collects every title the character has earned (battle rewards and streak titles).
 func (db *DB) GetAllTitles(charID int64) ([]string, error) {
 	var titles []string
 
@@ -144,22 +144,6 @@ func (db *DB) GetAllTitles(charID int64) ([]string, error) {
 	for rows2.Next() {
 		var t string
 		if err := rows2.Scan(&t); err != nil {
-			return nil, err
-		}
-		if t != "" {
-			titles = append(titles, t)
-		}
-	}
-
-	// Dungeon completion titles
-	rows3, err := db.conn.Query("SELECT earned_title FROM completed_dungeons WHERE char_id = ? ORDER BY completed_at", charID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows3.Close()
-	for rows3.Next() {
-		var t string
-		if err := rows3.Scan(&t); err != nil {
 			return nil, err
 		}
 		if t != "" {

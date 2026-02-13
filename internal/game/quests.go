@@ -38,13 +38,15 @@ func (e *Engine) GetEXPMultiplier(stat models.StatType) (float64, error) {
 }
 
 type CompleteResult struct {
-	EXPAwarded      int
-	LeveledUp       bool
-	OldLevel        int
-	NewLevel        int
-	StatType        models.StatType
-	AttemptsAwarded int
-	TotalAttempts   int
+	EXPAwarded          int
+	LeveledUp           bool
+	OldLevel            int
+	NewLevel            int
+	StatType            models.StatType
+	AttemptsAwarded     int
+	TotalAttempts       int
+	ExpeditionCompleted bool
+	ExpeditionName      string
 }
 
 func (e *Engine) CompleteQuest(questID int64) (*CompleteResult, error) {
@@ -106,6 +108,19 @@ func (e *Engine) CompleteQuest(questID int64) (*CompleteResult, error) {
 		return nil, err
 	}
 
+	expeditionCompleted := false
+	expeditionName := ""
+	if quest.ExpeditionID != nil {
+		expedition, done, err := e.AdvanceExpeditionByQuest(*quest)
+		if err != nil {
+			return nil, err
+		}
+		if done && expedition != nil {
+			expeditionCompleted = true
+			expeditionName = expedition.Name
+		}
+	}
+
 	// Record daily activity
 	e.DB.RecordDailyActivity(e.Character.ID, 1, 0, expAwarded)
 
@@ -123,13 +138,15 @@ func (e *Engine) CompleteQuest(questID int64) (*CompleteResult, error) {
 	e.CheckStreakMilestones()
 
 	return &CompleteResult{
-		EXPAwarded:      expAwarded,
-		LeveledUp:       stat.Level > oldLevel,
-		OldLevel:        oldLevel,
-		NewLevel:        stat.Level,
-		StatType:        quest.TargetStat,
-		AttemptsAwarded: attemptsAwarded,
-		TotalAttempts:   totalAttempts,
+		EXPAwarded:          expAwarded,
+		LeveledUp:           stat.Level > oldLevel,
+		OldLevel:            oldLevel,
+		NewLevel:            stat.Level,
+		StatType:            quest.TargetStat,
+		AttemptsAwarded:     attemptsAwarded,
+		TotalAttempts:       totalAttempts,
+		ExpeditionCompleted: expeditionCompleted,
+		ExpeditionName:      expeditionName,
 	}, nil
 }
 
@@ -222,8 +239,8 @@ func (e *Engine) AutoFailUnfinishedQuests() (int, error) {
 	today := time.Now().Format("2006-01-02")
 	failed := 0
 	for _, q := range active {
-		// Keep dungeon chains untouched; fail only regular/daily quest flow.
-		if q.DungeonID != nil {
+		// Keep expedition chains untouched; fail only regular/daily quest flow.
+		if q.ExpeditionID != nil {
 			continue
 		}
 		if q.CreatedAt.Format("2006-01-02") == today {

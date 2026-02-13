@@ -249,20 +249,21 @@ func ExpForLevel(level int) int {
 }
 
 type Quest struct {
-	ID              int64
-	CharID          int64
-	Title           string
-	Description     string
-	Congratulations string
-	Exp             int
-	Rank            QuestRank
-	TargetStat      StatType
-	Status          QuestStatus
-	CreatedAt       time.Time
-	CompletedAt     *time.Time
-	IsDaily         bool
-	TemplateID      *int64 // link to daily_quest_templates
-	DungeonID       *int64 // link to dungeon_quests if this is a dungeon quest
+	ID               int64
+	CharID           int64
+	Title            string
+	Description      string
+	Congratulations  string
+	Exp              int
+	Rank             QuestRank
+	TargetStat       StatType
+	Status           QuestStatus
+	CreatedAt        time.Time
+	CompletedAt      *time.Time
+	IsDaily          bool
+	TemplateID       *int64 // link to daily_quest_templates
+	ExpeditionID     *int64 // link to expeditions if this is an expedition quest
+	ExpeditionTaskID *int64 // link to expedition_tasks for task progress updates
 }
 
 type Skill struct {
@@ -322,49 +323,49 @@ type Statistics struct {
 	StatLevels           []StatLevel
 }
 
-// --- Dungeons ---
+// --- Expeditions ---
 
-type DungeonStatus string
+type ExpeditionStatus string
 
 const (
-	DungeonLocked     DungeonStatus = "locked"
-	DungeonAvailable  DungeonStatus = "available"
-	DungeonInProgress DungeonStatus = "in_progress"
-	DungeonCompleted  DungeonStatus = "completed"
+	ExpeditionActive    ExpeditionStatus = "active"
+	ExpeditionCompleted ExpeditionStatus = "completed"
+	ExpeditionFailed    ExpeditionStatus = "failed"
 )
 
-type StatRequirement struct {
-	StatType StatType `json:"stat_type"`
-	MinLevel int      `json:"min_level"`
+type Expedition struct {
+	ID           int64
+	Name         string
+	Description  string
+	Deadline     *time.Time
+	RewardEXP    int
+	RewardStats  map[StatType]int
+	IsRepeatable bool
+	Status       ExpeditionStatus
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	Tasks        []ExpeditionTask
 }
 
-type Dungeon struct {
-	ID               int64
-	Name             string
-	Description      string
-	Requirements     []StatRequirement
-	Status           DungeonStatus
-	RewardTitle      string
-	RewardEXP        int               // bonus EXP to ALL stats on completion
-	QuestDefinitions []DungeonQuestDef // quest templates inside the dungeon
+type ExpeditionTask struct {
+	ID              int64
+	ExpeditionID    int64
+	Title           string
+	Description     string
+	IsCompleted     bool
+	ProgressCurrent int
+	ProgressTarget  int
+	RewardEXP       int
+	TargetStat      StatType
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
-type DungeonQuestDef struct {
-	ID          int64
-	DungeonID   int64
-	Title       string
-	Description string
-	Exp         int
-	Rank        QuestRank
-	TargetStat  StatType
-}
-
-type CompletedDungeon struct {
-	ID          int64
-	CharID      int64
-	DungeonID   int64
-	CompletedAt time.Time
-	EarnedTitle string
+type CompletedExpedition struct {
+	ID           int64
+	CharID       int64
+	ExpeditionID int64
+	CompletedAt  time.Time
 }
 
 // --- Enemy System ---
