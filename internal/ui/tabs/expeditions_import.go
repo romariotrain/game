@@ -3,15 +3,15 @@ package tabs
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"strings"
 	"time"
 
-	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/storage"
+	"fyne.io/fyne/v2/widget"
 
 	"solo-leveling/internal/models"
+	"solo-leveling/internal/ui/components"
 )
 
 type importExpedition struct {
@@ -32,29 +32,60 @@ type importExpTask struct {
 	IsCompleted     bool   `json:"is_completed"`
 	ProgressCurrent int    `json:"progress_current"`
 	ProgressTarget  int    `json:"progress_target"`
+	RepeatCount     int    `json:"repeat_count"`
+	Repeats         int    `json:"repeats"`
+	Times           int    `json:"times"`
+	Count           int    `json:"count"`
 	RewardEXP       int    `json:"reward_exp"`
 	TargetStat      string `json:"target_stat"`
 	Stat            string `json:"stat"`
 }
 
 func showImportExpeditionsJSONDialog(ctx *Context) {
-	open := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
-		if err != nil {
-			dialog.ShowError(err, ctx.Window)
-			return
-		}
-		if reader == nil {
-			return
-		}
-		defer reader.Close()
+	t := components.T()
 
-		body, err := io.ReadAll(reader)
-		if err != nil {
-			dialog.ShowError(fmt.Errorf("не удалось прочитать файл: %w", err), ctx.Window)
+	entry := widget.NewMultiLineEntry()
+	entry.SetMinRowsVisible(14)
+	entry.SetPlaceHolder(`{
+  "expeditions": [
+    {
+      "name": "Экспедиция: Предмет",
+      "description": "10 тем",
+      "reward_exp": 100,
+      "reward_stats": {"intellect": 20},
+      "tasks": [
+        {
+          "title": "Выучить тему",
+          "repeat_count": 10,
+          "reward_exp": 15,
+          "target_stat": "INT"
+        }
+      ]
+    }
+  ]
+}`)
+
+	hint := components.MakeLabel(
+		"Вставьте JSON: объект, массив или {\"expeditions\":[...]}. Для повторов задачи используйте repeat_count/repeats/times/count или progress_target.",
+		t.TextSecondary,
+	)
+
+	formItems := []*widget.FormItem{
+		widget.NewFormItem("JSON", container.NewVBox(entry, hint)),
+	}
+
+	dialog.ShowForm("Импорт экспедиций из JSON", "Импортировать", "Отмена", formItems, func(ok bool) {
+		if !ok {
 			return
 		}
 
-		expeditions, err := parseImportedExpeditions(body)
+		text := strings.TrimSpace(entry.Text)
+		if text == "" {
+			dialog.ShowError(fmt.Errorf("JSON пуст"), ctx.Window)
+			return
+		}
+
+		expeditions, err := parseImportedExpeditions([]byte(text))
 		if err != nil {
 			dialog.ShowError(err, ctx.Window)
 			return
@@ -86,8 +117,6 @@ func showImportExpeditionsJSONDialog(ctx *Context) {
 			ctx.RefreshQuests()
 		}
 	}, ctx.Window)
-	open.SetFilter(storage.NewExtensionFileFilter([]string{".json"}))
-	open.Show()
 }
 
 func parseImportedExpeditions(raw []byte) ([]importExpedition, error) {
@@ -187,8 +216,12 @@ func (src importExpTask) toModel(index int) (models.ExpeditionTask, error) {
 
 	target := src.ProgressTarget
 	if target <= 0 {
+		target = firstPositive(src.RepeatCount, src.Repeats, src.Times, src.Count)
+	}
+	if target <= 0 {
 		target = 1
 	}
+
 	current := src.ProgressCurrent
 	if current < 0 {
 		current = 0
@@ -230,6 +263,15 @@ func (src importExpTask) toModel(index int) (models.ExpeditionTask, error) {
 		RewardEXP:       rewardExp,
 		TargetStat:      stat,
 	}, nil
+}
+
+func firstPositive(values ...int) int {
+	for _, v := range values {
+		if v > 0 {
+			return v
+		}
+	}
+	return 0
 }
 
 func parseStatTypeAlias(raw string) (models.StatType, bool) {
