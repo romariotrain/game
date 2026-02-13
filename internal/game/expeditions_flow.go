@@ -2,6 +2,7 @@ package game
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"solo-leveling/internal/models"
@@ -27,6 +28,20 @@ func (e *Engine) InitExpeditions() error {
 		}
 	}
 	return nil
+}
+
+func (e *Engine) CreateExpedition(expedition *models.Expedition) error {
+	if expedition == nil {
+		return fmt.Errorf("expedition is nil")
+	}
+	expedition.Name = strings.TrimSpace(expedition.Name)
+	if expedition.Name == "" {
+		return fmt.Errorf("expedition name is required")
+	}
+	if expedition.Status == "" {
+		expedition.Status = models.ExpeditionActive
+	}
+	return e.DB.InsertExpedition(expedition)
 }
 
 func (e *Engine) RefreshExpeditionStatuses(failExpired bool) error {

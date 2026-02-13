@@ -8,6 +8,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -19,8 +20,17 @@ func BuildExpeditions(ctx *Context) fyne.CanvasObject {
 	ctx.ExpeditionsPanel = container.NewVBox()
 	RefreshExpeditions(ctx)
 	return container.NewVScroll(container.NewPadded(
-		container.NewVBox(components.MakeSectionHeader("Экспедиции"), ctx.ExpeditionsPanel),
+		container.NewVBox(buildExpeditionsHeader(ctx), ctx.ExpeditionsPanel),
 	))
+}
+
+func buildExpeditionsHeader(ctx *Context) fyne.CanvasObject {
+	title := components.MakeSectionHeader("Экспедиции")
+	importBtn := widget.NewButtonWithIcon("Импорт JSON", theme.FolderOpenIcon(), func() {
+		showImportExpeditionsJSONDialog(ctx)
+	})
+	importBtn.Importance = widget.MediumImportance
+	return container.NewBorder(nil, nil, title, container.NewHBox(layout.NewSpacer(), importBtn))
 }
 
 func RefreshExpeditions(ctx *Context) {
